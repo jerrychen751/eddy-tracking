@@ -1,0 +1,22 @@
+# Credentials
+.env
+
+# Data (too large for git)
+data/
+examples/data/
+examples/misc/swot_l3_cycle474/
+
+# Pipeline outputs (regenerable)
+outputs/
+visuals/
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated plots (regenerable from notebooks)
+*.png
+*.pdf
+
+# macOS
+.DS_Store

@@ -1,0 +1,119 @@
+"""
+Run Phytoclass PFT decomposition on SDP pigment outputs.
+
+Processes each eddy independently in parallel: loads its pigment CSV
+(all dates, all pixels), runs SA + NNLS, and writes a per-eddy PFT CSV.
+Eddies are sorted largest-first so the long-running ones start early and
+smaller eddies fill in the remaining workers as they free up.
+"""
+
+import argparse
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from utils.config import load_config, resolve_output_dir, METADATA_COLS
+from utils.phytoclass import run_phytoclass
+
+parser = argparse.ArgumentParser()
+parser.add_argument("experiment")
+args = parser.parse_args()
+
+cfg = load_config(args.experiment, "base.yaml", "phytoclass.yaml")
+
+SEED = cfg["phytoclass"]["seed"]
+CLUSTER_THRESHOLD = cfg["phytoclass"]["cluster_threshold"]
+MIN_CLUSTER_SIZE = cfg["phytoclass"]["min_cluster_size"]
+N_ITER = cfg["phytoclass"]["n_iter"]
+N_NEIGHBORS = cfg["phytoclass"]["n_neighbors"]
+MAX_WORKERS = cfg["phytoclass"]["max_workers"]
+
+
+def process_eddy(pigment_path: Path, out_dir: Path) -> str | None:
+    """
+    Run phytoclass on a single eddy's pigment CSV and write the PFT CSV.
+
+    Returns a status string, or None if skipped (already exists or empty).
+    """
+    stem = pigment_path.stem.replace("_pigments", "")
+    out_path = out_dir / f"{stem}_pfts.csv"
+    if out_path.exists():
+        return None
+
+    df = pd.read_csv(pigment_path, parse_dates=["date"])
+    if df.empty:
+        return None
+
+    meta = df[METADATA_COLS].copy()
+    pigment_cols = [c for c in df.columns if c not in METADATA_COLS]
+
+    pfts = run_phytoclass(
+        df[pigment_cols],
+        seed=SEED,
+        cluster_threshold=CLUSTER_THRESHOLD,
+        min_cluster_size=MIN_CLUSTER_SIZE,
+        n_iter=N_ITER,
+        n_neighbors=N_NEIGHBORS,
+        n_jobs=1,  # prevent nested ProcessPoolExecutor deadlock
+    )
+
+    for i, col in enumerate(METADATA_COLS):
+        pfts.insert(i, col, meta[col].values)
+
+    pfts.to_csv(out_path, index=False)
+
+    n_dates = df["date"].nunique()
+    return f"{out_path.name}: {len(df)} pixels, {n_dates} dates"
+
+
+def process_polarity(experiment: str, polarity: str, max_workers: int) -> int:
+    pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
+    out_dir = resolve_output_dir(experiment, "pft", polarity)
+
+    pigment_files = list(pigment_dir.glob("eddy_*_pigments.csv"))
+    if not pigment_files:
+        print(f"[{polarity}] No pigment CSVs found in {pigment_dir}")
+        return 0
+
+    # Sort largest first so long-running eddies start immediately
+    pigment_files.sort(key=lambda f: f.stat().st_size, reverse=True)
+    print(f"[{polarity}] {len(pigment_files)} eddies, {max_workers} workers")
+
+    n_written = 0
+    n_failed = 0
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(process_eddy, Path(fp), out_dir): Path(fp).stem
+            for fp in pigment_files
+        }
+        for future in as_completed(futures):
+            stem = futures[future]
+            try:
+                result = future.result()
+            except Exception as e:
+                n_failed += 1
+                print(f"  FAILED {stem}: {e}")
+                continue
+            if result:
+                print(f"  {result}")
+                n_written += 1
+
+    if n_failed > 0:
+        raise RuntimeError(f"[{polarity}] {n_failed}/{len(pigment_files)} eddies failed")
+    return n_written
+
+
+def main():
+    max_workers = min(os.cpu_count() or 1, MAX_WORKERS)
+    n_written = 0
+    for polarity in ("cyclone", "anticyclone"):
+        n_written += process_polarity(args.experiment, polarity, max_workers)
+
+    print(f"Done. {n_written} PFT files written.")
+
+
+if __name__ == "__main__":
+    main()
