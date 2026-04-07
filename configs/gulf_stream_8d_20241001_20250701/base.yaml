@@ -1,0 +1,37 @@
+
+dataset: "gulf_stream_20241001_20250701"
+
+region:
+  lon_range: [-81, -56]
+  lat_range: [29, 44]
+
+time:
+  date_range: ["2024-10-01", "2025-07-01"]
+
+# Paths resolve to data/<dataset>/<dir>/
+data:
+  root: "data"
+  swot_dir: "swot_l4"
+  pace_dir: "pace_l3_8d"
+  sss_dir: "sss"
+  sst_dir: "sst"
+  sst_raw_tmp: "sst_raw_tmp"
+  sss_raw_tmp: "sss_raw_tmp"
+
+download:
+  swot:
+    ftp_dir: "swot_products/l4_karin_nadir/v2_0_1/miost/science"
+    max_workers: 2
+
+  pace:
+    opendap_base: "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
+    temporal_resolution: "8D"
+
+  sst:
+    collection_id: "C1615905770-OB_DAAC"
+    download_threads: 4
+
+  sss:
+    collection_id: "C2208422957-POCLOUD"
+    num_requests_workers: 4
+    download_chunk_size_mb: 16

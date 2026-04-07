@@ -1,0 +1,10 @@
+# Max consecutive missed days before breaking a track
+virtual: 3
+
+# Discard tracks shorter than this (days)
+min_track_days: 60
+
+# Post-tracking position smoothing (half-window sizes)
+position_filter:
+  median_half_window: 1  # removes single-day outlier jumps
+  loess_half_window: 5   # smooths trajectory

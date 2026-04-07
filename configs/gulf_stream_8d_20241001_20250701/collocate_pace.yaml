@@ -1,0 +1,5 @@
+min_coverage: 0.8
+temporal_resolution: "8D"
+
+# Restrict to specific track IDs (omit to process all)
+# track_ids: [5, 12, 20]

@@ -1,10 +1,9 @@
 """
-Download PACE OCI L3 Mapped Daily Rrs data via earthaccess.
+Download PACE OCI L3 Mapped Rrs data via earthaccess.
 
 Downloads full granules via HTTPS, subsets to the study region, and
-saves with compression. Uses earthaccess.download() instead of
-earthaccess.open() (S3 streaming) because S3 access is blocked on
-some HPC compute nodes.
+saves with compression. Supports daily or 8-day composites, controlled
+by base.yaml download.pace.temporal_resolution ("DAY" or "8D").
 """
 
 import argparse
@@ -31,8 +30,14 @@ LAT_RANGE = tuple(cfg["base"]["region"]["lat_range"])
 DATE_RANGE = tuple(cfg["base"]["time"]["date_range"])
 OUT_DIR = resolve_data_dir(cfg, "pace_dir")
 
-# Only keep daily 4km Rrs files (collection also contains 8-day, monthly, etc.)
-DAILY_4KM_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\..*\.Rrs\.4km\.nc")
+# Temporal resolution from config — "DAY" (default) or "8D"
+TEMPORAL_RES = cfg["base"]["download"]["pace"].get("temporal_resolution", "DAY")
+
+# Collection contains daily, 8-day, monthly, rolling composites — filter by regex
+GRANULE_RE = {
+    "DAY": re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\..*\.Rrs\.4km\.nc"),
+    "8D": re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\..*\.Rrs\.4km\.nc"),
+}[TEMPORAL_RES]
 
 
 def subset_and_save(ds: xr.Dataset, out_path: Path) -> None:
@@ -61,9 +66,6 @@ def main():
     earthaccess.login()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    start = dt.datetime.strptime(DATE_RANGE[0], "%Y-%m-%d").date()
-    end = dt.datetime.strptime(DATE_RANGE[1], "%Y-%m-%d").date()
-
     # Search once for all PACE L3 Rrs granules across the full date range.
     # The collection contains multiple temporal resolutions (daily, 8-day,
     # monthly, rolling composites) and spatial resolutions (4km, 9km, etc.),
@@ -74,65 +76,47 @@ def main():
         temporal=(DATE_RANGE[0], DATE_RANGE[1]),
         count=5000,
     )
-    print("CMR returned {} granules (all resolutions)".format(len(results)))
+    print(f"CMR returned {len(results)} granules (all resolutions)")
 
-    # Build a date -> granule mapping for daily 4km files only
-    daily_granules = {}
+    # Filter CMR results to matching granules (keyed by start date string)
+    matched_granules = {}
     for granule in results:
         for link in granule.data_links():
             filename = link.split("/")[-1]
-            m = DAILY_4KM_RE.match(filename)
+            m = GRANULE_RE.match(filename)
             if m:
-                date_str = m.group(1)
-                daily_granules[date_str] = (filename, granule)
+                matched_granules[m.group(1)] = (filename, granule)
                 break
 
-    print("Matched {} daily 4km granules".format(len(daily_granules)))
+    print(f"Matched {len(matched_granules)} {TEMPORAL_RES} 4km granules")
 
     total_saved = 0
     total_skipped = 0
-    total_missing = 0
     total_errors = 0
-    current = start
 
-    while current <= end:
-        date_str = current.strftime("%Y%m%d")
-
-        if date_str not in daily_granules:
-            total_missing += 1
-            current += dt.timedelta(days=1)
-            continue
-
-        filename, granule = daily_granules[date_str]
-        out_path = OUT_DIR / filename  # use actual granule filename, not a hardcoded template
+    for date_str, (filename, granule) in sorted(matched_granules.items()):
+        out_path = OUT_DIR / filename
         if out_path.exists():
             total_skipped += 1
-            current += dt.timedelta(days=1)
             continue
 
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 paths = earthaccess.download([granule], local_path=tmp_dir)
                 if not paths:
-                    print("No file returned for {}".format(current))
-                    current += dt.timedelta(days=1)
+                    print(f"No file returned for {date_str}")
                     continue
                 raw_path = Path(paths[0])
                 with xr.open_dataset(raw_path) as ds:
                     subset_and_save(ds, out_path)
             size_mb = out_path.stat().st_size / (1024 * 1024)
             total_saved += 1
-            print("Saved: {} ({:.1f} MB)".format(filename, size_mb))
+            print(f"Saved: {filename} ({size_mb:.1f} MB)")
         except Exception as e:
-            print("Error on {}: {}".format(current, e))
+            print(f"Error on {date_str}: {e}")
             total_errors += 1
 
-        current += dt.timedelta(days=1)
-
-    print(
-        "Done. {} saved, {} skipped, {} not on server, {} errors. "
-        "Files in {}".format(total_saved, total_skipped, total_missing, total_errors, OUT_DIR)
-    )
+    print(f"Done. {total_saved} saved, {total_skipped} skipped, {total_errors} errors. Files in {OUT_DIR}")
     if total_errors:
         sys.exit(f"{total_errors} date(s) failed to download")
 
