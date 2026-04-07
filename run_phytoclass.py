@@ -32,18 +32,16 @@ N_NEIGHBORS = cfg["phytoclass"]["n_neighbors"]
 MAX_WORKERS = cfg["phytoclass"]["max_workers"]
 
 
-def process_eddy(pigment_path: Path, out_dir: Path) -> str | None:
+def process_eddy(pigment_path: Path, out_path: Path) -> str | None:
     """
-    Run phytoclass on a single eddy's pigment CSV and write the PFT CSV.
+    Run phytoclass on a single eddy's pigment file and write PFT output.
 
     Returns a status string, or None if skipped (already exists or empty).
     """
-    stem = pigment_path.stem.replace("_pigments", "")
-    out_path = out_dir / f"{stem}_pfts.csv"
     if out_path.exists():
         return None
 
-    df = pd.read_csv(pigment_path, parse_dates=["date"])
+    df = pd.read_parquet(pigment_path)
     if df.empty:
         return None
 
@@ -63,7 +61,7 @@ def process_eddy(pigment_path: Path, out_dir: Path) -> str | None:
     for i, col in enumerate(METADATA_COLS):
         pfts.insert(i, col, meta[col].values)
 
-    pfts.to_csv(out_path, index=False)
+    pfts.to_parquet(out_path, index=False)
 
     n_dates = df["date"].nunique()
     return f"{out_path.name}: {len(df)} pixels, {n_dates} dates"
@@ -73,9 +71,9 @@ def process_polarity(experiment: str, polarity: str, max_workers: int) -> int:
     pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
     out_dir = resolve_output_dir(experiment, "pft", polarity)
 
-    pigment_files = list(pigment_dir.glob("eddy_*_pigments.csv"))
+    pigment_files = list(pigment_dir.glob("eddy_*_pigments.parquet"))
     if not pigment_files:
-        print(f"[{polarity}] No pigment CSVs found in {pigment_dir}")
+        print(f"[{polarity}] No pigment files found in {pigment_dir}")
         return 0
 
     # Sort largest first so long-running eddies start immediately
@@ -85,10 +83,10 @@ def process_polarity(experiment: str, polarity: str, max_workers: int) -> int:
     n_written = 0
     n_failed = 0
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(process_eddy, Path(fp), out_dir): Path(fp).stem
-            for fp in pigment_files
-        }
+        futures = {}
+        for fp in pigment_files:
+            out_path = out_dir / fp.name.replace("_pigments.parquet", "_pfts.parquet")
+            futures[executor.submit(process_eddy, fp, out_path)] = fp.stem
         for future in as_completed(futures):
             stem = futures[future]
             try:

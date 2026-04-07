@@ -39,32 +39,25 @@ BESSEL_WAVELENGTH = cfg["eddy_id"]["bessel_high_filter_wavelength"]
 ID_STEP = cfg["eddy_id"]["step"]
 ID_SHAPE_ERROR = cfg["eddy_id"]["shape_error"]
 
-def parse_file_datetime(local_fp: str) -> datetime:
-    filename = Path(local_fp).name
-    pattern = r'(\d{8})'
-    matches = re.search(pattern, filename)
-    
-    if not matches:
-        raise ValueError("Check that the filepath contains an 8-digit date")
-    
-    return datetime.strptime(matches.group(1), '%Y%m%d')
+def parse_file_datetime(local_fp: Path) -> datetime:
+    match = re.search(r'(\d{8})', local_fp.name)
+    if not match:
+        raise ValueError(f"No 8-digit date in filename: {local_fp.name}")
+    return datetime.strptime(match.group(1), '%Y%m%d')
 
 def id_one(
-    local_fp: str,
-    out_anticyclone_dir: str,
-    out_cyclone_dir: str,
-) -> tuple[str, str]:
+    local_fp: Path,
+    out_anticyclone_path: Path,
+    out_cyclone_path: Path,
+) -> tuple[Path, Path]:
     """
     Identify eddies in a single SWOT L4 SSH file.
 
     Subsets to region, applies Bessel high-pass filter, then runs
     PET's contour-based identification on ADT.
     """
-    date = parse_file_datetime(local_fp)
-    a_fn = f"{out_anticyclone_dir}/Anticyclonic_{date.strftime('%Y-%m-%d')}.nc"
-    c_fn = f"{out_cyclone_dir}/Cyclonic_{date.strftime('%Y-%m-%d')}.nc"
-    if Path(a_fn).exists() and Path(c_fn).exists():
-        return a_fn, c_fn
+    if out_anticyclone_path.exists() and out_cyclone_path.exists():
+        return out_anticyclone_path, out_cyclone_path
 
     # Read coordinates first to compute index slices, then re-open via
     # RegularGridDataset. The double open is necessary because PET's
@@ -107,9 +100,9 @@ def id_one(
     if not isinstance(a, EddiesObservations) or not isinstance(c, EddiesObservations):
         raise ValueError("Some step in eddy identification went wrong")
 
-    a.write_file(filename=a_fn)
-    c.write_file(filename=c_fn)
-    return a_fn, c_fn
+    a.write_file(filename=str(out_anticyclone_path))
+    c.write_file(filename=str(out_cyclone_path))
+    return out_anticyclone_path, out_cyclone_path
 
 
 def main():
@@ -123,14 +116,16 @@ def main():
         print(f"No .nc files found in {DATA_DIR}")
         return
 
-    a_dir = str(ANTICYCLONE_DIR)
-    c_dir = str(CYCLONE_DIR)
-
     # CPU-bound (Bessel filter + contour detection) — ThreadPoolExecutor would
     # serialize due to the GIL; must use ProcessPoolExecutor here
     n_failed = 0
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(id_one, f, a_dir, c_dir): f for f in local_filepaths}
+        futures = {}
+        for fp in local_filepaths:
+            date = parse_file_datetime(fp)
+            a_path = ANTICYCLONE_DIR / f"Anticyclonic_{date.strftime('%Y-%m-%d')}.nc"
+            c_path = CYCLONE_DIR / f"Cyclonic_{date.strftime('%Y-%m-%d')}.nc"
+            futures[executor.submit(id_one, fp, a_path, c_path)] = fp
 
         for future in as_completed(futures):
             fp = futures[future]
@@ -138,7 +133,7 @@ def main():
                 print(future.result())
             except Exception as e:
                 n_failed += 1
-                print(f"FAILED {Path(fp).name}: {e}")
+                print(f"FAILED {fp.name}: {e}")
 
     if n_failed > 0:
         raise RuntimeError(f"{n_failed}/{len(local_filepaths)} files failed in eddy_id")

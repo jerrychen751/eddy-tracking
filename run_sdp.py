@@ -1,7 +1,7 @@
 """
 Run the SDP pigment model on collocated PACE Rrs observations.
 
-For each per-eddy Rrs CSV produced by collocate_pace.py, preprocesses
+For each per-eddy Rrs Parquet file produced by collocate_pace.py, preprocesses
 the spectra (interpolate to 1nm, smooth, trim), samples SST/SSS at
 each pixel location, runs the Kramer et al. (2022) SDP model, and
 writes per-eddy pigment CSVs.
@@ -29,22 +29,21 @@ SST_DIR = resolve_data_dir(cfg, "sst_dir")
 SSS_DIR = resolve_data_dir(cfg, "sss_dir")
 
 
-def process_eddy(rrs_path: Path, out_dir: Path, sst_da, sss_da) -> bool:
+def process_eddy(rrs_path: Path, out_path: Path, sst_da, sss_da) -> bool:
     """
-    Run preprocessing + SDP on one eddy's Rrs CSV.
+    Run preprocessing + SDP on one eddy's Rrs Parquet file.
 
-    Loads the CSV, separates metadata from Rrs columns, preprocesses
-    the spectra to 1nm, samples nearest SST/SSS, runs the SDP model,
-    and writes a pigments CSV with metadata columns preserved.
+    Separates metadata from Rrs columns, preprocesses spectra to 1nm,
+    samples nearest SST/SSS, runs the SDP model, and writes a pigments
+    Parquet with metadata columns preserved.
 
     Returns True if the file was written, False if skipped.
     """
-    out_path = out_dir / rrs_path.name.replace("_rrs.csv", "_pigments.csv")
     if out_path.exists():
         print(f"Already exists: {out_path.name}")
         return False
 
-    df = pd.read_csv(rrs_path, parse_dates=["date"])
+    df = pd.read_parquet(rrs_path)
 
     # Separate metadata from Rrs columns
     rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
@@ -94,7 +93,7 @@ def process_eddy(rrs_path: Path, out_dir: Path, sst_da, sss_da) -> bool:
     for i, col in enumerate(METADATA_COLS):
         pigments_df.insert(i, col, df[col].values)
 
-    pigments_df.to_csv(out_path, index=False)
+    pigments_df.to_parquet(out_path, index=False)
 
     n_dates = df["date"].nunique()
     print(f"Wrote {out_path.name}: {len(pigments_df)} pixels, {n_dates} dates")
@@ -112,14 +111,15 @@ def main():
         rrs_dir = resolve_output_dir(args.experiment, "collocate_pace", polarity)
         out_dir = resolve_output_dir(args.experiment, "pigments", polarity)
 
-        rrs_files = sorted(rrs_dir.glob("eddy_*_rrs.csv"))
+        rrs_files = sorted(rrs_dir.glob("eddy_*_rrs.parquet"))
         if not rrs_files:
-            print(f"[{polarity}] No Rrs CSVs found in {rrs_dir}")
+            print(f"[{polarity}] No Rrs files found in {rrs_dir}")
             continue
 
         print(f"[{polarity}] Processing {len(rrs_files)} eddies...")
         for fp in rrs_files:
-            if process_eddy(Path(fp), out_dir, sst_da, sss_da):
+            out_path = out_dir / fp.name.replace("_rrs.parquet", "_pigments.parquet")
+            if process_eddy(fp, out_path, sst_da, sss_da):
                 n_written += 1
 
     print(f"Done. {n_written} pigment files written.")
