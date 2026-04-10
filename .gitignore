@@ -5,6 +5,10 @@
 data/
 examples/data/
 examples/misc/swot_l3_cycle474/
+*.nc
+*.parquet
+*.npy
+*.nc4
 
 # Pipeline outputs (regenerable)
 outputs/
@@ -17,6 +21,7 @@ __pycache__/
 # Generated plots (regenerable from notebooks)
 *.png
 *.pdf
+*.svg
 
 # macOS
 .DS_Store
