@@ -1,8 +1,16 @@
-"""Phytoclass: pigment-based phytoplankton community composition via SA + NNLS.
+"""
+Phytoclass: pigment-based phytoplankton community composition via SA + NNLS.
 
-Port of the R phytoclass package (Hayward et al. 2023) to Python.
-Resolves phytoplankton functional type (PFT) composition from accessory
-pigment concentrations using simulated annealing + NNLS matrix factorization.
+Port of Hayward et al. 2023 (phytoclass R package) to Python, aiming for
+byte-for-byte parity with R where feasible. See each submodule for the
+specific R source file it mirrors.
+
+Public API:
+    - simulated_annealing(S, Fmat, user_defined_min_max, ...): main SA algorithm
+    - matrix_checks(S, Fmat): pre-flight sanity filter
+    - cluster_samples(S, ...): sample pre-clustering helper
+    - run_phytoclass(...): convenience wrapper for the pipeline (clusters then
+      runs SA per cluster, returns a single per-sample PFT DataFrame).
 """
 
 import os
@@ -11,196 +19,184 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-from utils.phytoclass.config import (
-    SDP_TO_INTERNAL,
-    load_default_bounds,
-    load_default_f_matrix,
-)
-from utils.phytoclass.nnls_mf import nnls_factorize
-from utils.phytoclass.annealing import simulated_annealing
 from utils.phytoclass.cluster import cluster_samples
+from utils.phytoclass.matrix_checks import matrix_checks
+from utils.phytoclass.simulated_annealing import simulated_annealing
 
 
-def _build_bounds_dict(
-    F_df: pd.DataFrame,
-    bounds_df: pd.DataFrame,
-) -> dict[tuple[int, int], tuple[float, float]]:
-    """
-    Convert the bounds CSV into a {(row, col): (min, max)} dict
-    aligned to the F matrix indices.
+SDP_TO_INTERNAL: dict[str, str] = {
+    "T chla": "Tchla",
+    "Zea": "Zea",
+    "DV chla": "DV_chla",
+    "ButFuco": "ButFuco",
+    "HexFuco": "HexFuco",
+    "Allo": "Allo",
+    "MV chlb": "MV_chlb",
+    "Neo": "Neo",
+    "Viola": "Viola",
+    "Fuco": "Fuco",
+    "chl c1+c2": "Chlc12",
+    "chl c3": "Chlc3",
+    "Perid": "Perid",
+}
 
-    Args:
-        F_df: F matrix DataFrame (classes x pigments), indexed by class name.
-        bounds_df: Bounds DataFrame with columns: class, pigment, min, max.
 
-    Returns:
-        Dict mapping (class_idx, pigment_idx) to (min_val, max_val).
-    """
-    class_names = list(F_df.index)
-    col_names = list(F_df.columns)
-    result = {}
-    for _, row in bounds_df.iterrows():
-        if row["class"] in class_names and row["pigment"] in col_names:
-            i = class_names.index(row["class"])
-            j = col_names.index(row["pigment"])
-            result[(i, j)] = (row["min"], row["max"])
-    return result
+def _sa_on_cluster(
+    sub_df: pd.DataFrame,
+    f_matrix: pd.DataFrame,
+    min_max: pd.DataFrame,
+    n_iter: int,
+    seed: int | None,
+) -> pd.DataFrame:
+    """Run simulated_annealing on one sample cluster and return class abundances."""
+    result = simulated_annealing(
+        S=sub_df,
+        Fmat=f_matrix,
+        user_defined_min_max=min_max,
+        do_matrix_checks=False,
+        niter=n_iter,
+        seed=seed,
+        verbose=False,
+    )
+    return result["class_abundances"]
 
 
 def run_phytoclass(
     pigments_df: pd.DataFrame,
+    f_matrix: pd.DataFrame,
+    min_max: pd.DataFrame,
     as_fraction: bool = False,
     cluster_threshold: float = 1.5,
     min_cluster_size: int = 30,
     n_iter: int = 500,
-    n_neighbors: int = 120,
     seed: int | None = None,
     n_jobs: int | None = None,
 ) -> pd.DataFrame:
     """
-    Estimate phytoplankton community composition from pigment concentrations.
+    End-to-end pipeline: rename SDP columns, sample-cluster, run SA per cluster.
 
-    Takes a DataFrame of SDP-predicted pigment concentrations and returns
-    Chla-weighted abundances (or fractions) for each phytoplankton functional type.
-
-    Pipeline:
-        1. Map SDP column names to internal names
-        2. Cluster samples by pigment-ratio similarity (Ward's linkage)
-        3. Run simulated annealing + NNLS per cluster to optimize F matrix
-           (clusters are processed in parallel across CPU cores)
-        4. Combine results across clusters
+    This is the Python-pipeline convenience wrapper. It is not part of the
+    R phytoclass API — R expects the caller to handle clustering separately
+    and then call simulated_annealing() per cluster.
 
     Args:
-        pigments_df: DataFrame with SDP pigment columns. Must include at minimum:
-            "T chla", "Perid", "ButFuco", "Fuco", "HexFuco", "Allo", "Zea",
-            "MV chlb", "Neo", "Viola". Other columns are ignored.
-        as_fraction: If True, return fractions of total Chla (rows sum to 1).
-            If False, return absolute Chla per class (mg/m3).
-        cluster_threshold: Ward's linkage distance threshold for sample clustering.
-        min_cluster_size: Minimum samples per cluster.
+        pigments_df: SDP pigment DataFrame (per-sample rows). Expected SDP
+            columns include "T chla", "Perid", "ButFuco", "Fuco", "HexFuco",
+            "Allo", "Zea", "MV chlb", "Neo", "Viola", "chl c1+c2", "chl c3",
+            "DV chla". Columns not in SDP_TO_INTERNAL are ignored. The final
+            "T chla" column becomes the row's Tchla (required).
+        f_matrix: DataFrame with class names as index, internal pigment names
+            as columns (matching SDP_TO_INTERNAL values), Tchla as the final
+            column. Loaded from the experiment config.
+        min_max: DataFrame with columns Class, Pig_Abbrev, min, max. One row
+            per non-zero (class, pigment) pair in f_matrix. Loaded from the
+            experiment config.
+        as_fraction: If True, return row-normalized fractions of total Chla.
+            If False, return absolute class abundances in Chla units.
+        cluster_threshold: cophenetic distance cutoff for fcluster.
+        min_cluster_size: minimum samples per cluster; small clusters are
+            merged into their nearest large-cluster centroid.
         n_iter: SA iterations per cluster.
-        n_neighbors: Random neighbors per SA iteration.
-        seed: Random seed for reproducibility. Each cluster receives a
-            deterministic derived seed (seed + cluster_index).
-        n_jobs: Number of parallel worker processes. Defaults to
-            min(n_clusters, cpu_count). Set to 1 for sequential execution
-            and when calling from inside a ProcessPoolExecutor worker to
-            avoid nested process pools.
+        seed: per-cluster seeds are derived as seed + cluster_index.
+        n_jobs: parallel worker count. Defaults to min(n_clusters, cpu_count).
+            Set to 1 to avoid nested ProcessPoolExecutor inside a worker.
 
     Returns:
-        DataFrame with one column per PFT class (Diatoms, Dinoflagellates,
-        Haptophytes, Cryptophytes, Green_algae, Cyanobacteria). Same row
-        count as input. Values are Chla (mg/m3) or fractions.
+        DataFrame with one column per class, same row order as pigments_df.
     """
-    # Load defaults
-    F_df, _ = load_default_f_matrix()
-    bounds_df = load_default_bounds()
+    col_map = {
+        sdp: internal
+        for sdp, internal in SDP_TO_INTERNAL.items()
+        if sdp in pigments_df.columns and internal in f_matrix.columns
+    }
+    if "T chla" not in pigments_df.columns:
+        raise ValueError("pigments_df must contain a 'T chla' column (total chlorophyll a).")
 
-    # Map SDP names to internal names and select matching columns
-    col_map = {sdp: internal for sdp, internal in SDP_TO_INTERNAL.items()
-                if internal in F_df.columns and sdp in pigments_df.columns}
+    renamed = pigments_df[list(col_map.keys())].rename(columns=col_map)
 
-    # Build the sample matrix S with columns ordered to match F
-    f_cols = list(F_df.columns)  # includes Tchla at the end
-    sdp_for_col = {}
-    for sdp_name, internal_name in col_map.items():
-        sdp_for_col[internal_name] = sdp_name
-
-    S_cols_ordered = []
+    f_cols = list(f_matrix.columns)
     for fc in f_cols:
-        if fc in sdp_for_col:
-            S_cols_ordered.append(sdp_for_col[fc])
-        else:
-            # Column in F but not in SDP — skip by zeroing in F
-            S_cols_ordered.append(None)
+        if fc not in renamed.columns:
+            renamed[fc] = 0.0
+    renamed = renamed[f_cols]
 
-    # Remove F columns that have no SDP counterpart
-    keep_mask = [c is not None for c in S_cols_ordered]
-    f_cols_kept = [f_cols[i] for i in range(len(f_cols)) if keep_mask[i]]
-    sdp_cols_kept = [S_cols_ordered[i] for i in range(len(S_cols_ordered)) if keep_mask[i]]
-
-    F_arr = F_df[f_cols_kept].values.astype(float)
-    S_arr = pigments_df[sdp_cols_kept].values.astype(float)
-
-    # Validate: no NaN values
-    if np.any(np.isnan(S_arr)):
+    if renamed.isna().any().any():
         raise ValueError(
-            "Input contains NaN values. Drop or impute before calling run_phytoclass()."
+            "pigments_df contains NaN in at least one F-matrix pigment column — "
+            "drop or impute before calling run_phytoclass()."
         )
 
-    # Build bounds dict aligned to the kept columns
-    bounds_dict = _build_bounds_dict(
-        pd.DataFrame(F_arr, index=F_df.index, columns=f_cols_kept),
-        bounds_df,
+    S_filtered, F_filtered = matrix_checks(renamed, f_matrix)
+
+    class_names = list(f_matrix.index)
+    n_samples = len(pigments_df)
+    C_out = np.zeros((n_samples, len(class_names)))
+
+    clusters = cluster_samples(
+        S_filtered.values,
+        min_samples=min_cluster_size,
+        distance_threshold=cluster_threshold,
+    )
+    n_clusters = len(clusters)
+    print(
+        f"Phytoclass: {n_samples} samples -> {n_clusters} clusters, "
+        f"SA({n_iter} iter)"
     )
 
-    class_names = list(F_df.index)
-    n_samples = S_arr.shape[0]
-    n_classes = F_arr.shape[0]
-
-    # Allocate output
-    C_all = np.zeros((n_samples, n_classes))
-
-    # Cluster samples by pigment-ratio similarity
-    clusters = cluster_samples(S_arr, min_samples=min_cluster_size,
-                                distance_threshold=cluster_threshold)
-
-    n_clusters = len(clusters)
-    print(f"Phytoclass: {n_samples} samples -> {n_clusters} clusters, "
-          f"SA({n_iter} iter, {n_neighbors} neighbors)")
-
-    # Derive per-cluster seeds so each cluster is deterministic but independent
     cluster_seeds = [
-        (seed + i if seed is not None else None)
-        for i in range(n_clusters)
+        (seed + i if seed is not None else None) for i in range(n_clusters)
+    ]
+    cluster_frames = [
+        S_filtered.iloc[row_indices] for row_indices, _ in clusters
     ]
 
-    # Run SA in parallel across clusters
     if n_jobs is None:
         n_jobs = min(n_clusters, os.cpu_count() or 1)
 
+    out_by_cluster: dict[int, pd.DataFrame] = {}
     if n_jobs == 1 or n_clusters == 1:
-        # Sequential — avoids ProcessPoolExecutor overhead for trivial cases
-        for idx, (row_indices, S_cluster) in enumerate(clusters):
-            print(f"Cluster {idx + 1}/{n_clusters}: {len(row_indices)} samples...")
-            result = simulated_annealing(
-                S_cluster, F_arr, bounds_dict,
-                n_iter=n_iter, n_neighbors=n_neighbors,
-                seed=cluster_seeds[idx],
+        for idx, sub_df in enumerate(cluster_frames):
+            print(f"  cluster {idx + 1}/{n_clusters}: {len(sub_df)} samples...")
+            result_df = _sa_on_cluster(
+                sub_df, F_filtered, min_max, n_iter, cluster_seeds[idx]
             )
-            C_all[row_indices] = result["C"]
-            print(f"Cluster {idx + 1}/{n_clusters}: done (RMSE {result['rmse']:.6f})")
+            out_by_cluster[idx] = result_df
     else:
         with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-            futures = {}
-            for idx, (row_indices, S_cluster) in enumerate(clusters):
-                future = executor.submit(
-                    simulated_annealing,
-                    S_cluster, F_arr, bounds_dict,
-                    n_iter=n_iter, n_neighbors=n_neighbors,
-                    seed=cluster_seeds[idx],
-                )
-                futures[future] = (idx, row_indices, len(row_indices))
-
+            futures = {
+                executor.submit(
+                    _sa_on_cluster,
+                    sub_df, F_filtered, min_max, n_iter, cluster_seeds[idx],
+                ): idx
+                for idx, sub_df in enumerate(cluster_frames)
+            }
             for future in as_completed(futures):
-                idx, row_indices, n = futures[future]
+                idx = futures[future]
                 try:
-                    result = future.result()
-                except Exception as e:
-                    print(f"Cluster {idx + 1}/{n_clusters} FAILED: {e}")
-                    continue
-                C_all[row_indices] = result["C"]
-                print(f"Cluster {idx + 1}/{n_clusters}: {n} samples, RMSE {result['rmse']:.6f}")
+                    out_by_cluster[idx] = future.result()
+                except Exception as exc:
+                    print(f"  cluster {idx + 1}/{n_clusters} FAILED: {exc}")
+                    raise
 
-    # Build output DataFrame
-    out = pd.DataFrame(C_all, columns=class_names, index=pigments_df.index)
+    col_idx_by_name = {name: i for i, name in enumerate(class_names)}
+    for idx, (row_indices, _) in enumerate(clusters):
+        result_df = out_by_cluster[idx]
+        for col_name in result_df.columns:
+            if col_name in col_idx_by_name:
+                C_out[row_indices, col_idx_by_name[col_name]] = result_df[col_name].values
 
+    out = pd.DataFrame(C_out, columns=class_names, index=pigments_df.index)
     if as_fraction:
         row_sums = out.sum(axis=1)
         row_sums = row_sums.replace(0, np.nan)
         out = out.div(row_sums, axis=0).fillna(0)
-
     return out
 
 
-__all__ = ["run_phytoclass"]
+__all__ = [
+    "run_phytoclass",
+    "simulated_annealing",
+    "cluster_samples",
+    "matrix_checks",
+    "SDP_TO_INTERNAL",
+]

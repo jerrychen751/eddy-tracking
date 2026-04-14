@@ -1,0 +1,7 @@
+class,Perid,ButFuco,Fuco,Neo,Viola,HexFuco,Allo,Zea,DV_chla,MV_chlb,Chlc12,Chlc3,Tchla
+Diatoms,0,0,1,0,0,0,0,0,0,0,1,0,1
+Dinoflagellates,1,0,0,0,0,0,0,0,0,0,0,0,1
+Haptophytes,0,1,1,0,0,1,0,0,0,0,0,1,1
+Cryptophytes,0,0,0,0,0,0,1,0,0,0,0,0,1
+Green_algae,0,0,0,1,1,0,0,1,0,1,0,0,1
+Cyanobacteria,0,0,0,0,0,0,0,1,1,0,0,0,1

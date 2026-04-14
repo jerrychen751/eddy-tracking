@@ -86,3 +86,19 @@ def load_config(experiment: str, *filenames: str) -> dict[str, Any]:
             cfg[Path(name).stem] = yaml.safe_load(f)
 
     return cfg
+
+
+def resolve_config_file(experiment: str, relative_path: str) -> Path:
+    """
+    Returns an absolute Path to a file living inside the experiment's config dir.
+
+    Used by pipeline scripts to resolve paths that phytoclass.yaml declares
+    relative to its own directory (e.g. f_matrix.csv, min_max.csv). Keeps
+    config portable across machines and across experiment renames.
+
+    Args:
+        experiment: Name of the experiment subfolder under configs/.
+        relative_path: Path relative to configs/<experiment>/.
+    """
+    _validate_experiment(experiment)
+    return PROJECT_ROOT / "configs" / experiment / relative_path

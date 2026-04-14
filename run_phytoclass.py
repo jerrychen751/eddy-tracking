@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from utils.config import load_config, resolve_output_dir, METADATA_COLS
+from utils.config import load_config, resolve_config_file, resolve_output_dir, METADATA_COLS
 from utils.phytoclass import run_phytoclass
 
 parser = argparse.ArgumentParser()
@@ -28,8 +28,12 @@ SEED = cfg["phytoclass"]["seed"]
 CLUSTER_THRESHOLD = cfg["phytoclass"]["cluster_threshold"]
 MIN_CLUSTER_SIZE = cfg["phytoclass"]["min_cluster_size"]
 N_ITER = cfg["phytoclass"]["n_iter"]
-N_NEIGHBORS = cfg["phytoclass"]["n_neighbors"]
 MAX_WORKERS = cfg["phytoclass"]["max_workers"]
+
+F_MATRIX_PATH = resolve_config_file(args.experiment, cfg["phytoclass"]["f_matrix"])
+MIN_MAX_PATH = resolve_config_file(args.experiment, cfg["phytoclass"]["min_max"])
+F_MATRIX = pd.read_csv(F_MATRIX_PATH, index_col="class")
+MIN_MAX = pd.read_csv(MIN_MAX_PATH)
 
 
 def process_eddy(pigment_path: Path, out_path: Path) -> str | None:
@@ -50,11 +54,12 @@ def process_eddy(pigment_path: Path, out_path: Path) -> str | None:
 
     pfts = run_phytoclass(
         df[pigment_cols],
+        f_matrix=F_MATRIX,
+        min_max=MIN_MAX,
         seed=SEED,
         cluster_threshold=CLUSTER_THRESHOLD,
         min_cluster_size=MIN_CLUSTER_SIZE,
         n_iter=N_ITER,
-        n_neighbors=N_NEIGHBORS,
         n_jobs=1,  # prevent nested ProcessPoolExecutor deadlock
     )
 

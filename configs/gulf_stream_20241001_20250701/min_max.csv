@@ -1,4 +1,4 @@
-class,pigment,min,max
+Class,Pig_Abbrev,min,max
 Diatoms,Fuco,0.33,1.23
 Diatoms,Chlc12,0.05,0.50
 Dinoflagellates,Perid,0.29,1.60
