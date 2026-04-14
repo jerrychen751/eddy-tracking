@@ -39,7 +39,7 @@ Each experiment has a config directory under `configs/<experiment>/`:
 
 ```
 configs/
-  gulf_stream_cyclonic/
+  gulf_stream_20241001_20250701/
     base.yaml       # region, date range, data paths
     eddy_id.yaml    # Bessel filter, contour step, shape error
     eddy_track.yaml # virtual days, min track length, position filter
@@ -49,17 +49,17 @@ configs/
 
 Run the full pipeline:
 ```bash
-python run_pipeline.py gulf_stream_cyclonic
+python run_pipeline.py gulf_stream_20241001_20250701
 ```
 
 Run from a specific stage (to resume after a failure):
 ```bash
-python run_pipeline.py gulf_stream_cyclonic --from eddy_id
+python run_pipeline.py gulf_stream_20241001_20250701 --from eddy_id
 ```
 
 Run specific stages only:
 ```bash
-python run_pipeline.py gulf_stream_cyclonic eddy_id eddy_track
+python run_pipeline.py gulf_stream_20241001_20250701 eddy_id eddy_track
 ```
 
 **Stage order:**
@@ -80,7 +80,7 @@ Slurm scripts are in `slurm/`. The `submit_pipeline.sh` script chains all stages
 
 ```bash
 # On PACE login node:
-export EXPERIMENT=gulf_stream_cyclonic
+export EXPERIMENT=gulf_stream_20241001_20250701
 bash slurm/submit_pipeline.sh
 ```
 

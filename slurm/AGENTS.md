@@ -13,10 +13,10 @@ All jobs use `--account=math --partition=ice-cpu`.
 
 ```bash
 # Submit the full pipeline for an experiment
-EXPERIMENT=gulf_stream_cyclonic bash slurm/submit_pipeline.sh gulf_stream_cyclonic
+EXPERIMENT=gulf_stream_20241001_20250701 bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701
 
 # Resume from a specific stage (e.g., if eddy_id already ran)
-bash slurm/submit_pipeline.sh gulf_stream_cyclonic --from eddy_track
+bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701 --from eddy_track
 ```
 
 `submit_pipeline.sh` submits download stages in parallel (no mutual dependencies), then chains all subsequent stages with `--dependency=afterok` so each stage only starts after the previous one succeeds.

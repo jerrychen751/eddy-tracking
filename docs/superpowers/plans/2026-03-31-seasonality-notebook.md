@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
-EXPERIMENT = "gulf_stream_cyclonic"
+EXPERIMENT = "gulf_stream_20241001_20250701"
 COLORS = {"cyclone": "tab:blue", "anticyclone": "tab:red"}
 DIAGNOSTIC_PIGMENTS = ["Fuco", "HexFuco", "Perid", "Zea", "DV chla", "Allo", "MV chlb"]
 PFT_COLS = ["Diatoms", "Dinoflagellates", "Haptophytes", "Cryptophytes", "Green_algae", "Cyanobacteria"]

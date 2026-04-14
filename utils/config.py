@@ -51,7 +51,7 @@ def resolve_output_dir(experiment: str, *stages: str) -> Path:
     Creates the directory if it does not exist yet.
 
     Args:
-        experiment: Name of the experiment (e.g. "gulf_stream_cyclonic").
+        experiment: Name of the experiment (e.g. "gulf_stream_20241001_20250701").
         stages: One or more path segments (e.g. "eddy_id", "anticyclone").
     """
     _validate_experiment(experiment)
