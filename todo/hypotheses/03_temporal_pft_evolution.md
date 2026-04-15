@@ -43,12 +43,33 @@ These must be accounted for before attributing temporal patterns to ecological s
 2. Compute Spearman correlations between date and each PFT fraction
 3. Visually inspect for changepoints or regime shifts
 
-### Multi-Eddy Analysis (Confirmatory)
-1. For each eddy, compute PFT fractions at each available date
-2. Normalize time axis to "eddy age" (days since formation)
-3. Bin by eddy age (e.g., 0–30 days, 30–60 days, 60–90 days, 90+ days)
-4. Compare mean PFT fractions across age bins, stratified by polarity
-5. Use mixed-effects models: PFT ~ eddy_age + polarity + season + (1|eddy_id)
+### Multi-Eddy Pooling Strategy
+
+Pool across eddies to overcome per-eddy sparsity (cloud gaps leave most individual eddies with too few valid dates for a useful trend), but stratify on confounders so water-mass and seasonal effects don't swamp the successional signal.
+
+**What to split eddies on:**
+- **Polarity**: cyclone vs anticyclone
+- **Season**: by eddy formation month (or meteorological seasons DJF/MAM/JJA/SON)
+- **Origin relative to the Gulf Stream** — four categories, defined using a distance-from-axis threshold (km) to the mean Gulf Stream position:
+  1. Definitively north — formed and stayed north of the axis
+  2. Definitively south — formed and stayed south of the axis
+  3. Meandered south → north — formed south, later crossed to north
+  4. Meandered north → south — formed north, later crossed to south
+
+  Northern (slope water, nutrient-rich) and southern (Sargasso, oligotrophic) sides of the Gulf Stream carry very different background PFT communities. Pooling without this split conflates water-mass effects with succession. The two crossing categories are themselves interesting — cross-frontal transport may itself drive compositional change.
+
+**Age axis** — compute trajectories against both:
+- **Absolute age** (days since formation): preserves real-time growth/succession rates in ecological units
+- **Normalized age** (fraction of total lifetime, 0→1): enables comparison at the "same developmental stage" across eddies with different lifespans
+
+These answer different questions (how fast does succession happen vs how far along is the eddy in its lifecycle) and may give different results — worth running both.
+
+**Analysis steps:**
+1. For each eddy, compute PFT fractions (or radial profiles) at each available date
+2. Compute both absolute and normalized age for each observation
+3. Classify each eddy into one of the four origin categories
+4. Within each (polarity × season × origin) stratum, pool all observations and fit PFT vs age
+5. Mixed-effects model: `PFT ~ age + polarity + season + origin + (1|eddy_id)` — eddy_id as random effect to handle repeated measurements within the same eddy
 
 ### Control for Seasonality
 - Compare PFT trends inside eddies vs the surrounding background water at the same dates
@@ -67,4 +88,6 @@ These must be accounted for before attributing temporal patterns to ecological s
 - [ ] Multi-eddy PACE pixel extraction pipeline (shared with Hypothesis 1)
 - [ ] Time-series extraction per eddy per date
 - [ ] Background (non-eddy) PFT time-series for seasonal detrending
+- [ ] Gulf Stream axis/front definition (mean SSH contour or SST front position) with a distance threshold in km
+- [ ] Per-eddy origin classification into the four categories (formation position + trajectory crossing test)
 - [ ] Statistical framework: Spearman, mixed-effects models, changepoint detection
