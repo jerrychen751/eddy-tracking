@@ -66,3 +66,71 @@ def subset_to_bbox(
 ) -> None:
     with xr.open_dataset(input_path) as ds:
         subset_to_bbox_ds(ds, output_path, lon_range, lat_range)
+
+
+SST_FILENAME_RE = re.compile(
+    r"^AQUA_MODIS\.\d{8}_\d{8}\.L3m\.8D\.SST\.sst\.4km\.nc$"
+)
+
+
+def download_aqua_sst_8d_4km(
+    date_range: tuple[str, str],
+    lon_range: tuple[float, float],
+    lat_range: tuple[float, float],
+    out_dir: Path,
+    raw_tmp: Path,
+    collection_id: str,
+    download_threads: int = 4,
+) -> int:
+    """
+    Download AQUA MODIS 8-day 4km SST composites covering a date range and
+    bbox. Returns the number of new files saved. Skips files already present
+    in out_dir.
+    """
+    print("Downloading SST (AQUA MODIS L3m 8D 4km)")
+    earthaccess.login()
+
+    granules = earthaccess.search_data(
+        concept_id=collection_id,
+        temporal=(date_range[0], date_range[1]),
+        count=-1,
+    )
+    print(f"CMR returned {len(granules)} granules")
+
+    if not granules:
+        return 0
+
+    out_dir = Path(out_dir)
+    raw_tmp = Path(raw_tmp)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    wanted_urls: list[str] = []
+    for granule in granules:
+        for url in granule.data_links():
+            filename = url.split("?", 1)[0].rsplit("/", 1)[-1]
+            if SST_FILENAME_RE.match(filename):
+                if (out_dir / filename).exists():
+                    continue
+                wanted_urls.append(url)
+
+    if not wanted_urls:
+        return 0
+    wanted_urls.sort()
+
+    raw_tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        paths = earthaccess.download(
+            wanted_urls, local_path=str(raw_tmp), threads=download_threads,
+        )
+        saved = 0
+        for path in paths:
+            raw_path = Path(path)
+            out_path = out_dir / raw_path.name
+            if out_path.exists():
+                continue
+            subset_to_bbox(raw_path, out_path, lon_range, lat_range)
+            saved += 1
+    finally:
+        shutil.rmtree(raw_tmp, ignore_errors=True)
+
+    return saved
