@@ -182,40 +182,42 @@ def download_smap_sss_8d(
     saved = 0
     failed = 0
 
-    for i, (win_start, win_end) in enumerate(windows, 1):
-        label = win_start.strftime("%Y-%m")
-        print(f"[{i}/{len(windows)}] {label} ({win_start.date()} to {win_end.date()})")
+    try:
+        for i, (win_start, win_end) in enumerate(windows, 1):
+            label = win_start.strftime("%Y-%m")
+            print(f"[{i}/{len(windows)}] {label} ({win_start.date()} to {win_end.date()})")
 
-        request = Request(
-            collection=collection,
-            spatial=BBox(lon_range[0], lat_range[0], lon_range[1], lat_range[1]),
-            temporal={"start": win_start, "stop": win_end},
-            granule_name=["*8DAYS*"],
-            max_results=200,
-            skip_preview=True,
-        )
-
-        try:
-            job_id = client.submit(request)
-            futures = client.download_all(
-                job_id, directory=str(raw_tmp), overwrite=True
+            request = Request(
+                collection=collection,
+                spatial=BBox(lon_range[0], lat_range[0], lon_range[1], lat_range[1]),
+                temporal={"start": win_start, "stop": win_end},
+                granule_name=["*8DAYS*"],
+                max_results=200,
+                skip_preview=True,
             )
-            raw_files = [Path(f.result()) for f in futures]
-        except Exception as exc:
-            print(f"Error: {exc}")
-            failed += 1
-            continue
 
-        for raw_path in raw_files:
-            stable_name = strip_harmony_prefix(raw_path.name)
-            out_path = out_dir / stable_name
-            if out_path.exists():
+            try:
+                job_id = client.submit(request)
+                futures = client.download_all(
+                    job_id, directory=str(raw_tmp), overwrite=True
+                )
+                raw_files = [Path(f.result()) for f in futures]
+            except Exception as exc:
+                print(f"Error: {exc}")
+                failed += 1
                 continue
-            shutil.copy2(raw_path, out_path)
-            saved += 1
 
-        for f in raw_tmp.iterdir():
-            f.unlink()
+            for raw_path in raw_files:
+                stable_name = strip_harmony_prefix(raw_path.name)
+                out_path = out_dir / stable_name
+                if out_path.exists():
+                    continue
+                shutil.copy2(raw_path, out_path)
+                saved += 1
 
-    shutil.rmtree(raw_tmp, ignore_errors=True)
+            for f in raw_tmp.iterdir():
+                f.unlink()
+    finally:
+        shutil.rmtree(raw_tmp, ignore_errors=True)
+
     return saved, failed
