@@ -24,6 +24,7 @@ from matplotlib.path import Path as MplPath
 from py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir, METADATA_COLS
+from utils.subset import parse_date_range, in_subset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("experiment")
@@ -35,6 +36,8 @@ PACE_DIR = resolve_data_dir(cfg, "pace_dir")
 MIN_COVERAGE = cfg["collocate_pace"]["min_coverage"]
 TRACK_IDS = cfg["collocate_pace"].get("track_ids")
 TEMPORAL_RES = cfg["collocate_pace"].get("temporal_resolution", "DAY")
+REGION = cfg["collocate_pace"].get("region")
+DATE_RANGE = parse_date_range(cfg["collocate_pace"].get("date_range"))
 
 CYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "cyclone")
 ANTICYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "anticyclone")
@@ -119,6 +122,8 @@ def build_date_eddy_index(
     tracked: TrackEddiesObservations,
     polarity: str,
     track_ids: set[int] | None = None,
+    region: dict | None = None,
+    date_range: tuple[dt.date, dt.date] | None = None,
 ) -> dict[dt.date, list[EddyObs]]:
     """
     Build an inverted index mapping date → list of EddyObs.
@@ -150,13 +155,18 @@ def build_date_eddy_index(
                 continue
 
             day = PET_EPOCH + dt.timedelta(days=int(times[j]))
+            center_lon = float((center_lons[j] + 180) % 360 - 180)
+            center_lat = float(center_lats[j])
+            if not in_subset(center_lon, center_lat, day, region, date_range):
+                continue
+
             obs = EddyObs(
                 track_id=int(tid),
                 polarity=polarity,
                 contour_lon=(contour_lons[j] + 180) % 360 - 180,
                 contour_lat=contour_lats[j],
-                center_lon=float((center_lons[j] + 180) % 360 - 180),
-                center_lat=float(center_lats[j]),
+                center_lon=center_lon,
+                center_lat=center_lat,
             )
             index[day].append(obs)
 
@@ -228,7 +238,9 @@ def main():
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
         n_tracks = len(np.unique(tracked.track))
 
-        pol_index = build_date_eddy_index(tracked, polarity, track_ids_set)
+        pol_index = build_date_eddy_index(
+            tracked, polarity, track_ids_set, REGION, DATE_RANGE
+        )
         for day, obs_list in pol_index.items():
             date_index[day].extend(obs_list)
 
