@@ -1,0 +1,11 @@
+min_coverage: 0.8
+region:
+  lon_range:
+  - -75
+  - -58
+  lat_range:
+  - 32
+  - 42
+date_range:
+- '2024-12-01'
+- '2025-03-31'

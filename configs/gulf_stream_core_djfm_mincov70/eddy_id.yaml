@@ -1,0 +1,6 @@
+max_workers: 6
+
+bessel_high_filter_wavelength: 500  # high-pass cutoff (km)
+
+step: 0.004      # SSH contour step (m)
+shape_error: 55  # max % deviation from circle
