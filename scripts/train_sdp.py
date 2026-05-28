@@ -1,15 +1,20 @@
-"""Training routine for the SDP pigments model.
+"""
+Train the SDP pigments model and write coefficient CSVs.
 
-This module contains the PCA + regression model fitting logic adapted from
-`bioOptix_and_PFTs` and used to fit the coefficient ensembles written under
-`models/sdp_pigments/coefficients/`.
+Fits the Kramer et al. (2022) PCA + regression model for 13 pigments and
+saves per-pigment ensemble coefficients to `utils/sdp/coefficients/`, which
+`utils.sdp.prediction.run_sdp` then loads at inference time.
 """
 
+import time
+from pathlib import Path
+from typing import Any
+
 import numpy as np
+import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import root_mean_squared_error
-import pandas as pd
-from typing import Any
+
 
 def rrsModelTrain(
     RrsD: np.ndarray,
@@ -43,7 +48,7 @@ def rrsModelTrain(
         summary_gofs: DataFrame with mean/std of R2, RMSE, percent error, bias, and MAE across permutations.
         all_gofs: Dict of per-permutation goodness-of-fit arrays.
     """
-    
+
     # Cannot contain NaNs in training data for either HPLC or 2nd derivative of Rrs residuals
     if np.isnan(hplc_i).any():
         raise ValueError('hplc_i contains NaN values')
@@ -55,7 +60,7 @@ def rrsModelTrain(
         raise ValueError(
             f'RrsD and hplc_i row count mismatch: {RrsD.shape[0]} vs {hplc_i.shape[0]}'
         )
-    
+
     rng = np.random.default_rng(seed)
 
     # Create coefficients array: pigment = RrsD @ betas + alpha
@@ -127,7 +132,7 @@ def rrsModelTrain(
             CV_valid_spec = RrsD_training[these_CV_indices, :]
             CV_train_pigs = np.delete(pigs_training, these_CV_indices, axis=0)
             CV_train_spec = np.delete(RrsD_training, these_CV_indices, axis=0)
-            
+
             # standardize spectra for PCs using training statistics only
             train_mean = np.mean(CV_train_spec, axis=0)
             train_std = np.std(CV_train_spec, axis=0)
@@ -215,7 +220,7 @@ def rrsModelTrain(
                     f"Unknown mdl_pick_metric: {mdl_pick_metric!r}. "
                     "Must be one of: 'MAE', 'R2', 'RMSE', 'avg', 'med'."
                 )
- 
+
             # apply your optimized model and record the g.o.f. statistics for this k-th CV:
             X_train = CV_AFs_train[:, :n_modes_to_use[j]]
             y_train = CV_train_pigs
@@ -223,7 +228,7 @@ def rrsModelTrain(
             lin_mdl = LinearRegression()
             lin_mdl.fit(X_train, y_train)
 
-            alpha[j] = lin_mdl.intercept_  
+            alpha[j] = lin_mdl.intercept_
             these_betas = lin_mdl.coef_
 
             # now turn model coefficients for AF's into coefficients for the combined
@@ -248,9 +253,9 @@ def rrsModelTrain(
 
         # so now you have k sets of optimized coefficients. grab the
         # average of them and validate against your original 25% validation
-        # data set. 
-        
-        # Store mean/std of each set of k-fold CV betas 
+        # data set.
+
+        # Store mean/std of each set of k-fold CV betas
         # (the model coefficients for the ith run of the n_permutations):
         mean_betas = np.mean(betas, axis=1)
         mean_alphas = np.mean(alpha)
@@ -336,3 +341,51 @@ def rrsModelTrain(
     }
 
     return coefficients, intercepts, summary_gofs_df, all_gofs
+
+
+def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
+    """
+    Train SDP model on Rrs residuals and HPLC data.
+
+    Takes 2nd derivative of Rrs residuals, trains model for all 13 pigments using
+    100 permutations, 30 max PCs, 5-fold CV, MAE metric. Saves A (wavelength coefficients,
+    shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in utils/sdp/coefficients/.
+    """
+
+    # Use the 2nd derivative of the residual as model input
+    diffD2 = np.diff(RrsD, 2, axis=0)
+
+    n_permutations = 100 # the number of independent model validations to do (each formulates and validates a model)
+    max_pcs = 30 # max number of spectral pc's to incorporate into the model - 30
+    mdl_pick_metric = 'MAE' # pick the metric by which to evaluate pigment model fit - R2, RMSE, avg, med, ens, bias, MAE
+    k = 5
+    pft_index = 'pigment'
+
+    pigs2mdl = np.array(['Tchla','Zea','DVchla','ButFuco','HexFuco','Allo','MVchlb',
+                         'Neo','Viola','Fuco','Chlc12','Chlc3','Perid'])
+
+    # column order of the HPLC dataset passed in as hplc
+    hplc_vars = ['Tchla','Tchlb','Tchlc','ABcaro','ButFuco','HexFuco','Allo','Diadino','Diato',
+                 'Fuco','Perid','Zea','MVchla','DVchla','Chllide','MVchlb','DVchlb','Chlc12','Chlc3',
+                 'Lut','Neo','Viola','Phytin','Phide','Pras']
+
+    start = time.time()
+
+    # Coefficient output directory lives in the inference package so run_sdp can load them
+    output_dir = Path(__file__).resolve().parent.parent / "utils" / "sdp" / "coefficients"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Start modelling
+    for i in range(len(pigs2mdl)):
+        pigment = pigs2mdl[i]
+        pigment_index = hplc_vars.index(pigment)
+        hplc_i = hplc[:, pigment_index]
+        coefficients, intercepts, summary_gofs, all_gofs = rrsModelTrain(diffD2.T, hplc_i, pft_index, n_permutations, max_pcs, k, mdl_pick_metric, seed=100)
+
+        # Save coefficients to CSV files in the coefficients folder
+        a_filepath = output_dir / f"a_coefs_{pigment}.csv"
+        c_filepath = output_dir / f"c_coefs_{pigment}.csv"
+        pd.DataFrame(coefficients).to_csv(a_filepath, index=False)
+        pd.DataFrame(intercepts).to_csv(c_filepath, index=False)
+
+    print('Time taken:', time.time() - start)
