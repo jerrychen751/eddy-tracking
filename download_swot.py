@@ -27,7 +27,7 @@ cfg = load_config(args.experiment, "base.yaml")
 REMOTE_DIR = cfg["base"]["download"]["swot"]["ftp_dir"]
 LOCAL_DIR = resolve_data_dir(cfg, "swot_dir")
 MAX_WORKERS = cfg["base"]["download"]["swot"]["max_workers"]
-DATE_RANGE = tuple(cfg["base"]["time"]["date_range"])
+DATE_RANGE = tuple(cfg["base"]["time"]["eddy_date_range"])
 LON_RANGE = tuple(cfg["base"]["region"]["lon_range"])
 LAT_RANGE = tuple(cfg["base"]["region"]["lat_range"])
 

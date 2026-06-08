@@ -1,0 +1,42 @@
+
+dataset: "gulf_stream_pigment_influencers_20241001_20251231"
+
+region:
+  lon_range: [-81, -56]
+  lat_range: [29, 44]
+
+time:
+  # SWOT SSH window for eddy detection/tracking. Starts ~18 months before the PACE
+  # window so eddy births are observed and age_frac is not truncated at the edge.
+  eddy_date_range: ["2023-03-28", "2025-12-31"]
+  # PACE Rrs + ancillary window: post-commissioning PACE through the SSH end date.
+  rrs_date_range: ["2024-10-01", "2025-12-31"]
+
+# Paths resolve to data/<dataset>/<dir>/
+data:
+  root: "data"
+  swot_dir: "swot_l4"
+  pace_dir: "pace_l3_8d"
+  sss_dir: "sss"
+  sst_dir: "sst"
+  sst_raw_tmp: "sst_raw_tmp"
+  sss_raw_tmp: "sss_raw_tmp"
+
+download:
+  swot:
+    # AVISO experimental DUACS-MIOST L4 including SWOT, v3.0: gapless 2023-03-28 to
+    # 2025-12-31 (a flat dir, no science/calval split, unlike v2_0_1).
+    ftp_dir: "swot_products/l4_karin_nadir/v3_0/miost"
+    max_workers: 2
+
+  pace:
+    temporal_resolution: "8D"
+
+  sst:
+    collection_id: "C1615905770-OB_DAAC"
+    download_threads: 4
+
+  sss:
+    collection_id: "C2208422957-POCLOUD"
+    num_requests_workers: 4
+    download_chunk_size_mb: 16

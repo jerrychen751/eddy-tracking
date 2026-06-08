@@ -6,7 +6,8 @@ region:
   lat_range: [29, 44]
 
 time:
-  date_range: ["2024-10-01", "2025-07-01"]
+  eddy_date_range: ["2024-10-01", "2025-07-01"]
+  rrs_date_range: ["2024-10-01", "2025-07-01"]
 
 # Paths resolve to data/<dataset>/<dir>/
 data:
@@ -24,7 +25,7 @@ download:
     max_workers: 2
 
   pace:
-    opendap_base: "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
+    temporal_resolution: "DAY"
 
   sst:
     collection_id: "C1615905770-OB_DAAC"

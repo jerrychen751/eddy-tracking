@@ -21,7 +21,7 @@ cfg = load_config(args.experiment, "base.yaml")
 
 lon_range = tuple(cfg["base"]["region"]["lon_range"])
 lat_range = tuple(cfg["base"]["region"]["lat_range"])
-date_range = tuple(cfg["base"]["time"]["date_range"])
+date_range = tuple(cfg["base"]["time"]["rrs_date_range"])
 
 run_sst = args.only in (None, "sst")
 run_sss = args.only in (None, "sss")
