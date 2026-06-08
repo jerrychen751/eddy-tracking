@@ -1,9 +1,8 @@
-"""
-PACE OCI L3 mapped Rrs download helpers. Pure functions — no module globals.
-"""
+"""PACE OCI L3 mapped Rrs download helpers (search + OPeNDAP subset)."""
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import tempfile
@@ -17,6 +16,10 @@ GRANULE_RE = {
     "DAY": re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\..*\.Rrs\.4km\.nc"),
     "8D": re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\..*\.Rrs\.4km\.nc"),
 }
+
+# OB.DAAC Hyrax OPeNDAP root for PACE L3 mapped products, used to build a URL
+# when a granule's CMR metadata omits its OPENDAP DATA link (see download loop).
+OPENDAP_BASE = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
 
 
 def search_pace_l3_granules(
@@ -68,20 +71,28 @@ def _subset_and_save(
     tmp_path.rename(out_path)
 
 
-def download_pace_l3_granule(
-    granule: object,
-    out_path: Path,
-    lon_range: tuple[float, float],
-    lat_range: tuple[float, float],
-) -> None:
-    """Download a single granule to a temp dir, subset, save to out_path."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        paths = earthaccess.download([granule], local_path=tmp_dir)
-        if not paths:
-            raise RuntimeError("earthaccess returned no file")
-        raw_path = Path(paths[0])
-        with xr.open_dataset(raw_path) as ds:
-            _subset_and_save(ds, out_path, lon_range, lat_range)
+def _ensure_dap_auth() -> None:
+    """
+    Point libnetcdf's built-in OPeNDAP client at ~/.netrc so DAP URLs on
+    oceandata.sci.gsfc.nasa.gov authenticate against Earthdata Login with no
+    manual setup. Writes a throwaway rc file + cookie jar to a temp dir and
+    sets DAPRCFILE. HTTP.DEFLATE asks Hyrax to gzip the response (~75 -> ~42 MB
+    per granule on the wire).
+    """
+    netrc_path = Path.home() / ".netrc"
+    if not netrc_path.exists():
+        raise FileNotFoundError(
+            "~/.netrc with Earthdata Login credentials is required for OPeNDAP access"
+        )
+    dap_dir = Path(tempfile.gettempdir()) / "pace_opendap"
+    dap_dir.mkdir(exist_ok=True)
+    rc_path = dap_dir / ".dodsrc"
+    rc_path.write_text(
+        f"HTTP.NETRC={netrc_path}\n"
+        f"HTTP.COOKIEJAR={dap_dir / 'urs_cookies.txt'}\n"
+        "HTTP.DEFLATE=1\n"
+    )
+    os.environ["DAPRCFILE"] = str(rc_path)
 
 
 def download_pace_l3(
@@ -96,6 +107,7 @@ def download_pace_l3(
     Skips files already in out_dir. Returns (saved, skipped, errors).
     """
     earthaccess.login()
+    _ensure_dap_auth()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,7 +121,22 @@ def download_pace_l3(
             skipped += 1
             continue
         try:
-            download_pace_l3_granule(granule, out_path, lon_range, lat_range)
+            # OB.DAAC serves every granule via OPeNDAP; opening that URL and
+            # subsetting transfers only the ROI hyperslab (~42 MB gzipped)
+            # instead of the full global granule (~2.3 GB). Prefer the OPENDAP
+            # DATA link in the granule's CMR metadata; recent granules are on
+            # the Hyrax server but sometimes omit that link, so fall back to the
+            # stable {base}/YYYY/MMDD/filename pattern.
+            opendap_url = next(
+                (ru["URL"] for ru in granule.get("umm", {}).get("RelatedUrls", [])
+                 if ru.get("Subtype") == "OPENDAP DATA"),
+                None,
+            )
+            if opendap_url is None:
+                start = filename.split(".")[1]  # PACE_OCI.<start>_<end>.L3m...
+                opendap_url = f"{OPENDAP_BASE}/{start[:4]}/{start[4:8]}/{filename}"
+            with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
+                _subset_and_save(ds, out_path, lon_range, lat_range)
             size_mb = out_path.stat().st_size / (1024 * 1024)
             print(f"Saved: {filename} ({size_mb:.1f} MB)")
             saved += 1
