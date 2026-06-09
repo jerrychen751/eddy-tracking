@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("experiment")
 args = parser.parse_args()
 
-cfg = load_config(args.experiment, "eddy_track.yaml")
+cfg = load_config(args.experiment)
 
 ANTICYCLONE_ID_DIR = resolve_output_dir(args.experiment, "eddy_id", "anticyclone")
 CYCLONE_ID_DIR = resolve_output_dir(args.experiment, "eddy_id", "cyclone")

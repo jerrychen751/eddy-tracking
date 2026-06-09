@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("experiment")
 args = parser.parse_args()
 
-cfg = load_config(args.experiment, "base.yaml", "collocate_pace.yaml")
+cfg = load_config(args.experiment)
 
 PACE_DIR = resolve_data_dir(cfg, "pace_dir")
 MIN_COVERAGE = cfg["collocate_pace"]["min_coverage"]

@@ -26,7 +26,7 @@ parser.add_argument("experiment")
 args = parser.parse_args()
 
 # Config from YAML (base + eddy_id merged)
-cfg = load_config(args.experiment, "base.yaml", "eddy_id.yaml")
+cfg = load_config(args.experiment)
 
 LON_RANGE = tuple(cfg["base"]["region"]["lon_range"])
 LAT_RANGE = tuple(cfg["base"]["region"]["lat_range"])

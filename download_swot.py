@@ -22,7 +22,7 @@ parser.add_argument("experiment")
 args = parser.parse_args()
 
 # Config from YAML
-cfg = load_config(args.experiment, "base.yaml")
+cfg = load_config(args.experiment)
 
 REMOTE_DIR = cfg["base"]["download"]["swot"]["ftp_dir"]
 LOCAL_DIR = resolve_data_dir(cfg, "swot_dir")

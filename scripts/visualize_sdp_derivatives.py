@@ -27,7 +27,7 @@ OUTPUT_PATH = REPO_ROOT / "visuals" / "sdp_derivative_cascade.png"
 
 
 def main():
-    cfg = load_config(EXPERIMENT, "base.yaml")
+    cfg = load_config(EXPERIMENT)
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
 

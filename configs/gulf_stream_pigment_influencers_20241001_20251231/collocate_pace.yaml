@@ -1,9 +1,0 @@
-min_coverage: 0.8
-temporal_resolution: "8D"
-
-# Keep only eddy-days within the PACE window. Eddies are tracked over the wider
-# eddy_date_range, but collocation should not retain eddy-days outside rrs_date_range.
-date_range: ["2024-10-01", "2025-12-31"]
-
-# Restrict to specific track IDs (omit to process all)
-# track_ids: [5, 12, 20]

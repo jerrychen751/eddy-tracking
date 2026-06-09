@@ -1,0 +1,75 @@
+base:
+
+  dataset: "gulf_stream_20241001_20250701"
+
+  region:
+    lon_range: [-81, -56]
+    lat_range: [29, 44]
+
+  time:
+    eddy_date_range: ["2024-10-01", "2025-07-01"]
+    rrs_date_range: ["2024-10-01", "2025-07-01"]
+
+  # Paths resolve to data/<dataset>/<dir>/
+  data:
+    root: "data"
+    swot_dir: "swot_l4"
+    pace_dir: "pace_l3_8d"
+    sss_dir: "sss"
+    sst_dir: "sst"
+    sst_raw_tmp: "sst_raw_tmp"
+    sss_raw_tmp: "sss_raw_tmp"
+
+  download:
+    swot:
+      ftp_dir: "swot_products/l4_karin_nadir/v2_0_1/miost/science"
+      max_workers: 2
+
+    pace:
+      temporal_resolution: "8D"
+
+    sst:
+      collection_id: "C1615905770-OB_DAAC"
+      download_threads: 4
+
+    sss:
+      collection_id: "C2208422957-POCLOUD"
+      num_requests_workers: 4
+      download_chunk_size_mb: 16
+
+eddy_id:
+  max_workers: 6
+
+  bessel_high_filter_wavelength: 500  # high-pass cutoff (km)
+
+  step: 0.004      # SSH contour step (m)
+  shape_error: 55  # max % deviation from circle
+
+eddy_track:
+  # Max consecutive missed days before breaking a track
+  virtual: 3
+
+  # Discard tracks shorter than this (days)
+  min_track_days: 60
+
+  # Post-tracking position smoothing (half-window sizes)
+  position_filter:
+    median_half_window: 1  # removes single-day outlier jumps
+    loess_half_window: 5   # smooths trajectory
+
+collocate_pace:
+  min_coverage: 0.8
+  temporal_resolution: "8D"
+
+  # Restrict to specific track IDs (omit to process all)
+  # track_ids: [5, 12, 20]
+
+phytoclass:
+  seed: 42
+  cluster_threshold: 0.65
+  min_cluster_size: 30
+  n_iter: 500
+  n_neighbors: 120
+  max_workers: 12  # parallel workers for per-eddy SA; set to 1 for debugging
+  f_matrix: f_matrix.csv  # relative to this config dir
+  min_max: min_max.csv

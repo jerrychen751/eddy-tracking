@@ -1,4 +1,0 @@
-min_coverage: 0.8
-
-# Restrict to specific track IDs (omit to process all)
-# track_ids: [5, 12, 20]

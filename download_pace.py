@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("experiment")
 args = parser.parse_args()
 
-cfg = load_config(args.experiment, "base.yaml")
+cfg = load_config(args.experiment)
 
 lon_range = tuple(cfg["base"]["region"]["lon_range"])
 lat_range = tuple(cfg["base"]["region"]["lat_range"])

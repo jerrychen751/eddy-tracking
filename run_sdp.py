@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("experiment")
 args = parser.parse_args()
 
-cfg = load_config(args.experiment, "base.yaml")
+cfg = load_config(args.experiment)
 
 PACE_DIR = resolve_data_dir(cfg, "pace_dir")
 SST_DIR = resolve_data_dir(cfg, "sst_dir")

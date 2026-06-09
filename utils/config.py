@@ -27,9 +27,9 @@ def _validate_experiment(experiment: str) -> None:
 
 def resolve_data_dir(cfg: dict[str, Any], dir_key: str) -> Path:
     """
-    Returns a Path to the local directory for a data subdirectory.
+    Returns the bronze-layer (raw download) directory for a data subdir.
 
-    Builds the path as: data / <dataset> / <dir_key value>.
+    Builds the path as: data / <dataset> / bronze / <dir_key value>.
     Creates the directory if it does not exist yet.
 
     Args:
@@ -37,55 +37,54 @@ def resolve_data_dir(cfg: dict[str, Any], dir_key: str) -> Path:
         dir_key: Key name in cfg["base"]["data"] (e.g. "swot_dir").
     """
     base = cfg["base"]
-    dataset: str = base["dataset"]
-    root_dir: str = base["data"]["root"]
-    dest = PROJECT_ROOT / root_dir / dataset / base["data"][dir_key]
+    dest = PROJECT_ROOT / base["data"]["root"] / base["dataset"] / "bronze" / base["data"][dir_key]
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 
 def resolve_output_dir(experiment: str, *stages: str) -> Path:
     """
-    Returns a Path to an output directory namespaced by experiment.
+    Returns a silver-layer (intermediate processed) directory for a stage.
 
-    Builds the path as: outputs / <experiment> / <stage1> / <stage2> / ...
+    Builds the path as: data / <experiment> / silver / <stage1> / <stage2> / ...
     Creates the directory if it does not exist yet.
 
     Args:
-        experiment: Name of the experiment (e.g. "gulf_stream_20241001_20250701").
+        experiment: Name of the experiment subfolder under configs/.
         stages: One or more path segments (e.g. "eddy_id", "anticyclone").
     """
     _validate_experiment(experiment)
-    dest = PROJECT_ROOT / "outputs" / experiment
+    dest = PROJECT_ROOT / "data" / experiment / "silver"
     for stage in stages:
         dest = dest / stage
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 
-def load_config(experiment: str, *filenames: str) -> dict[str, Any]:
+def resolve_gold_dir(experiment: str, *parts: str) -> Path:
     """
-    Returns a dictionary of the specified config files (expects file extension).
+    Returns a gold-layer (analysis-ready) path: data / <experiment> / gold / <parts>.
 
-    The filename (without extension) is the key, and the parsed YAML content
-    is the value. Config files are read from configs/<experiment>/.
-
-    Args:
-        experiment: Name of the experiment subfolder under configs/.
-        filenames: YAML filenames to load (e.g. "base.yaml", "eddy_id.yaml").
+    Creates the gold/ base directory; the returned path may be a file (e.g. the
+    table parquet) or a subdirectory the caller creates.
     """
     _validate_experiment(experiment)
-    cfg_dir = PROJECT_ROOT / "configs" / experiment
-    if not cfg_dir.exists():
-        raise FileNotFoundError(
-            f"Experiment config directory not found: {cfg_dir}"
-        )
+    dest = PROJECT_ROOT / "data" / experiment / "gold"
+    dest.mkdir(parents=True, exist_ok=True)
+    for part in parts:
+        dest = dest / part
+    return dest
 
-    cfg = {}
-    for name in filenames:
-        fp = cfg_dir / name
-        with open(fp) as f:
-            cfg[Path(name).stem] = yaml.safe_load(f)
+def load_config(experiment: str) -> dict[str, Any]:
+    """
+    Load configs/<experiment>/config.yaml, parsed and keyed by stage section.
 
-    return cfg
+    Sections are the top-level keys (cfg["base"], cfg["eddy_id"], ...).
+    """
+    _validate_experiment(experiment)
+    cfg_path = PROJECT_ROOT / "configs" / experiment / "config.yaml"
+    if not cfg_path.exists():
+        raise FileNotFoundError(f"Experiment config not found: {cfg_path}")
+    with open(cfg_path) as f:
+        return yaml.safe_load(f)
 
 
 def resolve_config_file(experiment: str, relative_path: str) -> Path:

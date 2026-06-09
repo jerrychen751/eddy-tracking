@@ -131,7 +131,7 @@ def main():
     if not config_dir.is_dir():
         print(
             f"ERROR: Config directory not found: {config_dir}\n"
-            f"Create configs/{args.experiment}/ with base.yaml before running.",
+            f"Create configs/{args.experiment}/ with config.yaml before running.",
             file=sys.stderr,
         )
         sys.exit(1)

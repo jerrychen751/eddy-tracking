@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("experiment")
 args = parser.parse_args()
 
-cfg = load_config(args.experiment, "base.yaml", "phytoclass.yaml")
+cfg = load_config(args.experiment)
 
 SEED = cfg["phytoclass"]["seed"]
 CLUSTER_THRESHOLD = cfg["phytoclass"]["cluster_threshold"]
