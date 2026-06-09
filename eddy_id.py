@@ -47,6 +47,7 @@ def parse_file_datetime(local_fp: Path) -> datetime:
 
 def id_one(
     local_fp: Path,
+    date: datetime,
     out_anticyclone_path: Path,
     out_cyclone_path: Path,
 ) -> tuple[Path, Path]:
@@ -125,7 +126,7 @@ def main():
             date = parse_file_datetime(fp)
             a_path = ANTICYCLONE_DIR / f"Anticyclonic_{date.strftime('%Y-%m-%d')}.nc"
             c_path = CYCLONE_DIR / f"Cyclonic_{date.strftime('%Y-%m-%d')}.nc"
-            futures[executor.submit(id_one, fp, a_path, c_path)] = fp
+            futures[executor.submit(id_one, fp, date, a_path, c_path)] = fp
 
         for future in as_completed(futures):
             fp = futures[future]

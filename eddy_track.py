@@ -33,6 +33,14 @@ MEDIAN_HALF_WINDOW = cfg["eddy_track"]["position_filter"]["median_half_window"]
 LOESS_HALF_WINDOW = cfg["eddy_track"]["position_filter"]["loess_half_window"]
 
 
+def _remove_path(path: Path) -> None:
+    """Remove a zarr directory or a stray same-named file from a prior write."""
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
 def track(id_dir: Path, track_dir: Path) -> None:
     """
     Run PET tracking on all daily eddy ID files in id_dir, write result to track_dir.
@@ -71,13 +79,11 @@ def track(id_dir: Path, track_dir: Path) -> None:
     )
 
     out_path = track_dir / f"{name}_tracks.zarr"
-    tmp_path = track_dir / f"{name}_tracks.zarr.tmp"
-    if tmp_path.exists():
-        shutil.rmtree(tmp_path)
+    tmp_path = track_dir / f"{name}_tracks.tmp.zarr"
+    _remove_path(tmp_path)
     tracked.write_file(filename=str(tmp_path))
     # Only remove the old zarr after the new one is fully written
-    if out_path.exists():
-        shutil.rmtree(out_path)
+    _remove_path(out_path)
     tmp_path.rename(out_path)
     print(f"[{name}] Wrote {out_path}")
 
