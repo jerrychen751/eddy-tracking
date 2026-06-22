@@ -5,7 +5,7 @@ For each PACE file (daily or 8-day composite), finds all eddies that
 were detected during the observation period, extracts valid Rrs pixels
 within each eddy's contour, and writes per-eddy Parquet files.
 
-Temporal resolution is set via collocate_pace.yaml:
+Temporal resolution is set via the collocate_pace config section:
   - "DAY" (default): exact date match between PACE file and eddy detection
   - "8D": for each 8-day composite, picks the eddy contour from the day
     closest to the window midpoint (since the Rrs is a temporal average)

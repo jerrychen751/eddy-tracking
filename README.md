@@ -50,49 +50,149 @@ Each experiment has a config directory under `configs/<experiment>/`:
 ```
 configs/
   gulf_stream_20241001_20250701/
-    base.yaml       # region, date range, data paths
-    eddy_id.yaml    # Bessel filter, contour step, shape error
-    eddy_track.yaml # virtual days, min track length, position filter
-    collocate_pace.yaml
-    phytoclass.yaml
+    config.yaml     # all stage settings in one file, keyed by section:
+                    #   base (region, dates, data paths), eddy_id, eddy_track,
+                    #   collocate_pace, phytoclass
+    f_matrix.csv    # phytoclass pigment-to-PFT matrix
+    min_max.csv     # phytoclass parameter bounds
 ```
 
-Run the full pipeline:
+Data is organized in a bronze/silver/gold (medallion) layout: `bronze/` is raw
+downloads keyed by dataset, `silver/` is per-experiment processed stages, and
+`gold/` is the analysis-ready table.
+
+### Transformation DAG
+
+```text
+Bronze downloads
+----------------
+download_swot.py
+  -> data/{dataset}/bronze/swot_l4/*.nc
+
+download_pace.py
+  -> data/{dataset}/bronze/pace_l3_8d/*.nc
+
+download_sst_sss.py
+  -> data/{dataset}/bronze/sst/*.nc
+  -> data/{dataset}/bronze/sss/*.nc
+
+
+Core eddy + pigment branch
+--------------------------
+data/{dataset}/bronze/swot_l4/*.nc
+  -> eddy_id.py
+  -> silver/eddy_id/{cyclone,anticyclone}/*.nc
+  -> eddy_track.py
+  -> silver/eddy_track/{cyclone,anticyclone}/*_tracks.zarr
+
+silver/eddy_track/{cyclone,anticyclone}/*_tracks.zarr
+data/{dataset}/bronze/pace_l3_8d/*.nc
+  -> collocate_pace.py
+  -> silver/collocate_pace/{cyclone,anticyclone}/eddy_*_rrs.parquet
+
+silver/collocate_pace/{cyclone,anticyclone}/eddy_*_rrs.parquet
+data/{dataset}/bronze/sst/*.nc
+data/{dataset}/bronze/sss/*.nc
+  -> run_sdp.py
+  -> silver/pigments/{cyclone,anticyclone}/eddy_*_pigments.parquet
+
+
+Optional PFT branch
+-------------------
+silver/pigments/{cyclone,anticyclone}/eddy_*_pigments.parquet
+  -> run_phytoclass.py
+  -> silver/pft/{cyclone,anticyclone}/eddy_*_pfts.parquet
+
+
+Gold-table side inputs
+----------------------
+data/{dataset}/bronze/swot_l4/*.nc
+silver/eddy_track/{cyclone,anticyclone}/*_tracks.zarr
+  -> gulf_stream.py
+  -> silver/gulf_stream/streamline.parquet
+  -> silver/gulf_stream/eddy_movement.parquet
+
+data/{dataset}/bronze/swot_l4/*.nc
+silver/eddy_track/{cyclone,anticyclone}/*_tracks.zarr
+  -> eddy_dynamics.py
+  -> silver/eddy_dynamics/{cyclone,anticyclone}/dynamics.parquet
+
+data/{dataset}/bronze/pace_l3_8d/*.nc
+data/{dataset}/bronze/swot_l4/*.nc
+data/{dataset}/bronze/sst/*.nc
+data/{dataset}/bronze/sss/*.nc
+silver/eddy_track/{cyclone,anticyclone}/*_tracks.zarr
+  -> background.py
+  -> silver/pigments/background/bg_mean.parquet
+
+
+Gold table
+----------
+silver/pigments/{cyclone,anticyclone}/eddy_*_pigments.parquet
+silver/eddy_track/{cyclone,anticyclone}/*_tracks.zarr
+silver/gulf_stream/streamline.parquet
+silver/gulf_stream/eddy_movement.parquet
+silver/eddy_dynamics/{cyclone,anticyclone}/dynamics.parquet
+silver/pigments/background/bg_mean.parquet
+  -> build_gold_table.py
+  -> gold/eddy_pigment_table.parquet
+```
+
+`run_phytoclass.py` is a downstream PFT branch from the pigment files. It is
+useful for community-composition analyses, but the current gold table does not
+join PFT outputs.
+
+### Orchestration
+
+`run_pipeline.py` is a lightweight local subprocess runner for producing the
+gold table. It runs the three download stages in parallel and then runs these
+stages sequentially:
+
+```text
+eddy_id -> eddy_track -> collocate_pace -> run_sdp
+  -> gulf_stream -> eddy_dynamics -> background -> build_gold_table
+```
+
+It is not a full DAG engine: it has a hard-coded stage list, does not infer
+dependencies from files, and individual stage scripts own most skip/overwrite
+behavior. The hard-coded default stage list is the current gold-table path.
+
+Run the full local gold-table pipeline:
+
 ```bash
-python run_pipeline.py gulf_stream_20241001_20250701
+uv run python run_pipeline.py <experiment>
 ```
 
-Run from a specific stage (to resume after a failure):
+Resume from a stage:
+
 ```bash
-python run_pipeline.py gulf_stream_20241001_20250701 --from eddy_id
+uv run python run_pipeline.py <experiment> --from run_sdp
 ```
 
-Run specific stages only:
+Run an explicit subset:
+
 ```bash
-python run_pipeline.py gulf_stream_20241001_20250701 eddy_id eddy_track
+uv run python run_pipeline.py <experiment> eddy_dynamics background build_gold_table
 ```
 
-**Stage order:**
-1. `download_swot` — AVISO FTP → `data/<dataset>/swot_l4/`
-2. `download_pace` — Earthdata HTTPS → `data/<dataset>/pace_l3/`
-3. `download_sst_sss` — earthaccess + Harmony → `data/<dataset>/sst/`, `sss/`
-4. `eddy_id` — py-eddy-tracker identification → `outputs/<experiment>/eddy_id/`
-5. `eddy_track` — py-eddy-tracker tracking → `outputs/<experiment>/eddy_track/`
-6. `collocate_pace` — PACE Rrs inside eddy contours → `outputs/<experiment>/collocate_pace/`
-7. `run_sdp` — SDP pigment inversion → `outputs/<experiment>/pigments/`
-8. `run_phytoclass` — PFT decomposition → `outputs/<experiment>/pft/`
+`run_phytoclass.py` is available as an explicit optional branch after
+`run_sdp.py` when PFT parquet files are needed:
 
-Stages 1–3 run in parallel; stages 4–8 are sequential.
+```bash
+uv run python run_pipeline.py <experiment> run_phytoclass
+```
 
 ## HPC (PACE Phoenix cluster)
 
 Slurm scripts are in `slurm/`.
-The `submit_pipeline.sh` script chains all stages via `--dependency=afterok`.
+The `submit_pipeline.sh` script is still the older core/PFT cluster runner. It
+does not currently submit the gold-table stages
+(`gulf_stream`, `eddy_dynamics`, `background`, `build_gold_table`).
 
 ```bash
 # On the Phoenix login node (GT VPN required):
 export EXPERIMENT=<experiment>   # e.g. gulf_stream_20241001_20250701
-bash slurm/submit_pipeline.sh
+bash slurm/submit_pipeline.sh "$EXPERIMENT"
 ```
 
 Each sbatch script requires `$EXPERIMENT` to be set via `sbatch --export` or the submit script.
@@ -104,11 +204,16 @@ See `slurm/README.md` for details.
 ## Directory structure
 
 ```
-configs/          per-experiment YAML configs
-data/             input data (gitignored, too large)
-outputs/          pipeline outputs (gitignored, regenerable)
+configs/          per-experiment config.yaml (+ phytoclass CSVs)
+data/             per-experiment medallion layers (gitignored, regenerable):
+  <experiment>/
+    bronze/       raw downloads (SWOT, PACE, SST, SSS)
+    silver/       processed stages (eddy_id, eddy_track, collocate_pace,
+                  pigments, pft, gulf_stream, eddy_dynamics)
+    gold/         analysis-ready eddy-pigment table
+outputs/          legacy outputs from older experiments (pre-medallion)
 utils/
-  config.py       YAML loader, path helpers, METADATA_COLS
+  config.py       config loader, medallion path helpers, METADATA_COLS
   sdp/            SDP pigment model (Kramer et al. 2022)
   phytoclass/     phytoclass PFT decomposition (Hayward et al. 2023)
 notebooks/        exploratory analysis

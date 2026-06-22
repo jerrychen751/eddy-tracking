@@ -91,9 +91,9 @@ def resolve_config_file(experiment: str, relative_path: str) -> Path:
     """
     Returns an absolute Path to a file living inside the experiment's config dir.
 
-    Used by pipeline scripts to resolve paths that phytoclass.yaml declares
-    relative to its own directory (e.g. f_matrix.csv, min_max.csv). Keeps
-    config portable across machines and across experiment renames.
+    Resolves paths that the phytoclass config references relative to the
+    config directory (e.g. f_matrix.csv, min_max.csv). Keeps config portable
+    across machines and experiment renames.
 
     Args:
         experiment: Name of the experiment subfolder under configs/.
