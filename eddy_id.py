@@ -13,31 +13,11 @@ from pathlib import Path
 import re
 import xarray as xr
 import numpy as np
-from py_eddy_tracker.dataset.grid import RegularGridDataset
-from py_eddy_tracker.observations.observation import EddiesObservations
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
 
 # Correspondances takes a sorted list of files, so naming should be in YYYY-MM-DD format.
 # Use separate naming prefixes for cyclonic/anticyclonic
-
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-args = parser.parse_args()
-
-# Config from YAML (base + eddy_id merged)
-cfg = load_config(args.experiment)
-
-LON_RANGE = tuple(cfg["base"]["region"]["lon_range"])
-LAT_RANGE = tuple(cfg["base"]["region"]["lat_range"])
-DATA_DIR = resolve_data_dir(cfg, "swot_dir")
-ANTICYCLONE_DIR = resolve_output_dir(args.experiment, "eddy_id", "anticyclone")
-CYCLONE_DIR = resolve_output_dir(args.experiment, "eddy_id", "cyclone")
-
-MAX_WORKERS = cfg["eddy_id"]["max_workers"]
-BESSEL_WAVELENGTH = cfg["eddy_id"]["bessel_high_filter_wavelength"]
-ID_STEP = cfg["eddy_id"]["step"]
-ID_SHAPE_ERROR = cfg["eddy_id"]["shape_error"]
 
 def parse_file_datetime(local_fp: Path) -> datetime:
     match = re.search(r'(\d{8})', local_fp.name)
@@ -45,11 +25,33 @@ def parse_file_datetime(local_fp: Path) -> datetime:
         raise ValueError(f"No 8-digit date in filename: {local_fp.name}")
     return datetime.strptime(match.group(1), '%Y%m%d')
 
+
+def eddy_output_paths(
+    anticyclone_dir: Path, cyclone_dir: Path, date: datetime
+) -> tuple[Path, Path]:
+    """
+    Explicit PET output paths for one identification date.
+
+    This intentionally bypasses py-eddy-tracker's CLI filename template path,
+    whose upstream ``date.strftime("%(path)s/%(sign_type)s_...")`` handling
+    consumes the placeholders before ``write_file()`` can substitute them.
+    """
+    return (
+        anticyclone_dir / f"Anticyclonic_{date:%Y-%m-%d}.nc",
+        cyclone_dir / f"Cyclonic_{date:%Y-%m-%d}.nc",
+    )
+
+
 def id_one(
     local_fp: Path,
     date: datetime,
     out_anticyclone_path: Path,
     out_cyclone_path: Path,
+    lon_range: tuple[float, float],
+    lat_range: tuple[float, float],
+    bessel_wavelength: float,
+    id_step: float,
+    id_shape_error: float,
 ) -> tuple[Path, Path]:
     """
     Identify eddies in a single SWOT L4 SSH file.
@@ -60,12 +62,15 @@ def id_one(
     if out_anticyclone_path.exists() and out_cyclone_path.exists():
         return out_anticyclone_path, out_cyclone_path
 
+    from py_eddy_tracker.dataset.grid import RegularGridDataset
+    from py_eddy_tracker.observations.observation import EddiesObservations
+
     # Read coordinates first to compute index slices, then re-open via
     # RegularGridDataset. The double open is necessary because PET's
     # RegularGridDataset takes a filename + index dict, not an open dataset.
     with xr.open_dataset(local_fp) as ds:
-        lon_min, lon_max = LON_RANGE
-        lat_min, lat_max = LAT_RANGE
+        lon_min, lon_max = lon_range
+        lat_min, lat_max = lat_range
 
         lon = ds.coords['longitude'].to_numpy()
         lat = ds.coords['latitude'].to_numpy()
@@ -87,7 +92,7 @@ def id_one(
     )
 
     # Apply bessel high pass filter
-    grid.bessel_high_filter('adt', BESSEL_WAVELENGTH)
+    grid.bessel_high_filter('adt', bessel_wavelength)
 
     # Perform eddy id
     a, c = grid.eddy_identification(
@@ -95,8 +100,8 @@ def id_one(
         uname='ugos',
         vname='vgos',
         date=date,
-        step=ID_STEP,
-        shape_error=ID_SHAPE_ERROR,
+        step=id_step,
+        shape_error=id_shape_error,
     )
     if not isinstance(a, EddiesObservations) or not isinstance(c, EddiesObservations):
         raise ValueError("Some step in eddy identification went wrong")
@@ -106,27 +111,54 @@ def id_one(
     return out_anticyclone_path, out_cyclone_path
 
 
-def main():
+def main(experiment: str | None = None):
+    if experiment is None:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        args = parser.parse_args()
+        experiment = args.experiment
+
+    cfg = load_config(experiment)
+    lon_range = tuple(cfg["base"]["region"]["lon_range"])
+    lat_range = tuple(cfg["base"]["region"]["lat_range"])
+    data_dir = resolve_data_dir(cfg, "swot_dir")
+    anticyclone_dir = resolve_output_dir(experiment, "eddy_id", "anticyclone")
+    cyclone_dir = resolve_output_dir(experiment, "eddy_id", "cyclone")
+    max_workers = cfg["eddy_id"]["max_workers"]
+    bessel_wavelength = cfg["eddy_id"]["bessel_high_filter_wavelength"]
+    id_step = cfg["eddy_id"]["step"]
+    id_shape_error = cfg["eddy_id"]["shape_error"]
+
     # Ensure output paths
-    ANTICYCLONE_DIR.mkdir(parents=True, exist_ok=True)
-    CYCLONE_DIR.mkdir(parents=True, exist_ok=True)
+    anticyclone_dir.mkdir(parents=True, exist_ok=True)
+    cyclone_dir.mkdir(parents=True, exist_ok=True)
 
     # Obtain a list of local filepaths
-    local_filepaths = list(DATA_DIR.glob("*.nc"))
+    local_filepaths = list(data_dir.glob("*.nc"))
     if not local_filepaths:
-        print(f"No .nc files found in {DATA_DIR}")
+        print(f"No .nc files found in {data_dir}")
         return
 
     # CPU-bound (Bessel filter + contour detection) — ThreadPoolExecutor would
     # serialize due to the GIL; must use ProcessPoolExecutor here
     n_failed = 0
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         for fp in local_filepaths:
             date = parse_file_datetime(fp)
-            a_path = ANTICYCLONE_DIR / f"Anticyclonic_{date.strftime('%Y-%m-%d')}.nc"
-            c_path = CYCLONE_DIR / f"Cyclonic_{date.strftime('%Y-%m-%d')}.nc"
-            futures[executor.submit(id_one, fp, date, a_path, c_path)] = fp
+            a_path, c_path = eddy_output_paths(anticyclone_dir, cyclone_dir, date)
+            futures[executor.submit(
+                id_one,
+                fp,
+                date,
+                a_path,
+                c_path,
+                lon_range,
+                lat_range,
+                bessel_wavelength,
+                id_step,
+                id_shape_error,
+            )] = fp
 
         for future in as_completed(futures):
             fp = futures[future]
