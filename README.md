@@ -84,17 +84,22 @@ python run_pipeline.py gulf_stream_20241001_20250701 eddy_id eddy_track
 
 Stages 1–3 run in parallel; stages 4–8 are sequential.
 
-## HPC (PACE ICE cluster)
+## HPC (PACE Phoenix cluster)
 
-Slurm scripts are in `slurm/`. The `submit_pipeline.sh` script chains all stages via `--dependency=afterok`.
+Slurm scripts are in `slurm/`.
+The `submit_pipeline.sh` script chains all stages via `--dependency=afterok`.
 
 ```bash
-# On PACE login node:
-export EXPERIMENT=gulf_stream_20241001_20250701
+# On the Phoenix login node (GT VPN required):
+export EXPERIMENT=<experiment>   # e.g. gulf_stream_20241001_20250701
 bash slurm/submit_pipeline.sh
 ```
 
 Each sbatch script requires `$EXPERIMENT` to be set via `sbatch --export` or the submit script.
+
+The `slurm/` scripts activate the uv venv (`source .venv/bin/activate`) and submit with `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
+Before a real run, point `data/` at scratch (`ln -sfn ~/scratch/eddy-data ~/projects/eddy-tracking/data`), since home is only 20 GB, and stage `.env` + `~/.netrc` for the download stages.
+See `slurm/README.md` for details.
 
 ## Directory structure
 

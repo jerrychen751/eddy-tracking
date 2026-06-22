@@ -1,13 +1,15 @@
-# AGENTS.md — slurm/
+# Slurm job scripts
 
-HPC Slurm job scripts for running the eddy-tracking pipeline on PACE ICE.
-All jobs use `--account=math --partition=ice-cpu`.
+HPC Slurm job scripts for running the eddy-tracking pipeline on PACE Phoenix.
+All jobs use `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
+`inferno` is the default charged QOS; switch to `--qos=embers` for free but preemptible backfill.
 
 ## Prerequisites
 
-- Copy the repo to `~/projects/eddy-tracking/` on the cluster (or adjust the `cd` line in each `.sbatch`).
-- Source your conda environment: each script calls `source /usr/local/pace-apps/manual/packages/anaconda3/2022.05.0.1/etc/profile.d/conda.sh && conda activate eddy`.
-- Create a `.env` file in the project root with `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD` before running download stages.
+- Place the repo at `~/projects/eddy-tracking/`, then build the env with `uv sync --no-dev`.
+- Each script activates the uv virtual environment with `cd ~/projects/eddy-tracking && source .venv/bin/activate` (no conda).
+- Point `data/` at scratch, not the 20 GB home dir (the group project space is currently full): `ln -sfn ~/scratch/eddy-data ~/projects/eddy-tracking/data`. Scratch is 15 TB but purges files untouched for 60 days, so copy the small gold parquet to home for long-term keeping.
+- Create a `.env` in the project root with `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD`, and ensure `~/.netrc` has Earthdata credentials, before running the download stages.
 
 ## How to submit
 
