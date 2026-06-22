@@ -8,7 +8,7 @@ day) and outside every tracked eddy contour active during the window. Their Rrs
 spectra run through the same SDP model as the eddy pixels, and the per-pigment
 mean over those pixels is the background for that date.
 
-Writes silver/background/bg_mean.parquet: one row per composite date with
+Writes silver/pigments/background/bg_mean.parquet: one row per composite date with
 columns date, bg_mean_<pigment> (13), and n_bg_pixels.
 """
 
@@ -28,33 +28,6 @@ from utils.sdp import run_sdp
 from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
 from utils.sdp.preprocessing import preprocess_rrs_batch
 
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-parser.add_argument(
-    "--subsample", type=int, default=2000,
-    help="Max background pixels per composite to push through SDP (0 = use all). "
-         "The regional mean is stable well below the full count, so subsampling "
-         "keeps a local run fast; raise it or set 0 for a faithful all-pixel mean.",
-)
-parser.add_argument(
-    "--limit", type=int, default=0,
-    help="Process at most this many PACE files (0 = all). For quick smoke tests.",
-)
-args = parser.parse_args()
-
-cfg = load_config(args.experiment)
-
-SWOT_DIR = resolve_data_dir(cfg, "swot_dir")
-PACE_DIR = resolve_data_dir(cfg, "pace_dir")
-SST_DIR = resolve_data_dir(cfg, "sst_dir")
-SSS_DIR = resolve_data_dir(cfg, "sss_dir")
-OUT_DIR = resolve_output_dir(args.experiment, "background")
-
-CYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "cyclone")
-ANTICYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "anticyclone")
-
-TEMPORAL_RES = cfg["collocate_pace"].get("temporal_resolution", "DAY")
-
 PET_EPOCH = dt.date(1950, 1, 1)
 # DUACS/MIOST relative_vorticity is already normalized by the Coriolis parameter
 # (dimensionless zeta/f), so "calm" water is a direct threshold on its magnitude.
@@ -64,6 +37,14 @@ SWOT_SEARCH_DAYS = 4
 PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
 PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\.")
 SWOT_DATE_RE = re.compile(r"\d{8}")
+TEMPORAL_RES = "DAY"
+SWOT_DIR = None
+PACE_DIR = None
+SST_DIR = None
+SSS_DIR = None
+OUT_DIR = None
+CYCLONE_TRACK_DIR = None
+ANTICYCLONE_TRACK_DIR = None
 
 # on-disk SDP pigment name -> canonical suffix (must match build_gold_table.PIGMENTS)
 PIGMENTS = {
@@ -72,6 +53,27 @@ PIGMENTS = {
     "Viola": "Viola", "Fuco": "Fuco", "chl c1+c2": "Chlc12", "chl c3": "Chlc3",
     "Perid": "Perid",
 }
+
+
+def background_output_dir(experiment: str):
+    """Silver path for pigment background means."""
+    return resolve_output_dir(experiment, "pigments", "background")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    parser.add_argument(
+        "--subsample", type=int, default=2000,
+        help="Max background pixels per composite to push through SDP (0 = use all). "
+             "The regional mean is stable well below the full count, so subsampling "
+             "keeps a local run fast; raise it or set 0 for a faithful all-pixel mean.",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=0,
+        help="Process at most this many PACE files (0 = all). For quick smoke tests.",
+    )
+    return parser.parse_args()
 
 
 def pace_window(filename: str) -> tuple[dt.date, dt.date, dt.date] | None:
@@ -204,7 +206,25 @@ def background_means(df: pd.DataFrame, sst_da, sss_da) -> dict | None:
     return means
 
 
-def main():
+def main(experiment: str | None = None, subsample: int = 2000, limit: int = 0):
+    if experiment is None:
+        args = parse_args()
+        experiment = args.experiment
+        subsample = args.subsample
+        limit = args.limit
+
+    cfg = load_config(experiment)
+    global SWOT_DIR, PACE_DIR, SST_DIR, SSS_DIR, OUT_DIR
+    global CYCLONE_TRACK_DIR, ANTICYCLONE_TRACK_DIR, TEMPORAL_RES
+    SWOT_DIR = resolve_data_dir(cfg, "swot_dir")
+    PACE_DIR = resolve_data_dir(cfg, "pace_dir")
+    SST_DIR = resolve_data_dir(cfg, "sst_dir")
+    SSS_DIR = resolve_data_dir(cfg, "sss_dir")
+    OUT_DIR = background_output_dir(experiment)
+    CYCLONE_TRACK_DIR = resolve_output_dir(experiment, "eddy_track", "cyclone")
+    ANTICYCLONE_TRACK_DIR = resolve_output_dir(experiment, "eddy_track", "anticyclone")
+    TEMPORAL_RES = cfg["collocate_pace"].get("temporal_resolution", "DAY")
+
     swot_files = swot_files_by_date()
     eddy_contours = load_eddy_contours()
     print("Loading SST/SSS grids...")
@@ -212,8 +232,8 @@ def main():
     sss_da = load_sss_dataset(SSS_DIR)
 
     pace_files = sorted(PACE_DIR.glob("*.nc"))
-    if args.limit:
-        pace_files = pace_files[: args.limit]
+    if limit:
+        pace_files = pace_files[:limit]
     print(f"Computing background means for {len(pace_files)} PACE composites...")
 
     rng = np.random.default_rng(0)
@@ -262,8 +282,8 @@ def main():
             print(f"{repr_date}: no background pixels after eddy exclusion, skipping")
             continue
 
-        if args.subsample and n_candidate > args.subsample:
-            candidate = np.sort(rng.choice(candidate, size=args.subsample, replace=False))
+        if subsample and n_candidate > subsample:
+            candidate = np.sort(rng.choice(candidate, size=subsample, replace=False))
 
         pet_day = (repr_date - PET_EPOCH).days
         date_value = pd.Timestamp("1950-01-01") + pd.to_timedelta(pet_day, unit="D")
