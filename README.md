@@ -14,17 +14,27 @@ The pipeline ingests daily SWOT L4 SSH data, identifies and tracks mesoscale edd
 
 ## Setup
 
-```bash
-# Create the conda environment (environment.yml not yet exported — install manually or ask a collaborator for it)
-conda create -n eddy python=3.11
-conda activate eddy
-# Install key packages: py-eddy-tracker, xarray, zarr, earthaccess, pandas, numpy,
-# matplotlib, scipy, cartopy, python-dotenv, scikit-learn, harmony-py
+This project uses [uv](https://docs.astral.sh/uv/) to manage its Python environment.
+Install uv once with `curl -LsSf https://astral.sh/uv/install.sh | sh`, then from the repo root run:
 
-cp .env.example .env   # fill in AVISO FTP credentials
+```bash
+uv sync                # build .venv from the locked dependencies (Python 3.10)
+cp .env.example .env   # then fill in your AVISO FTP credentials
 ```
 
-> **Note:** To generate a reproducible `environment.yml` from an existing setup: `conda env export --no-builds > environment.yml`
+`uv sync` reads `pyproject.toml` and `uv.lock` and builds an exact, reproducible environment.
+Run pipeline commands through it with `uv run`, for example `uv run python run_pipeline.py <experiment>`, or `source .venv/bin/activate` once and call `python` directly.
+
+`pyeddytracker` is installed from PyPI. `eddy_id.py` calls PET's
+`grid.eddy_identification(...)` directly and writes explicit output filenames,
+so it does not rely on PET's CLI filename template path.
+
+### Phoenix (PACE) cluster
+
+Install uv the same way on Phoenix (its login node can reach PyPI and GitHub), place this repo under `~/projects/`, then run `uv sync --no-dev`.
+The `--no-dev` flag skips the Jupyter tooling that batch jobs do not need.
+uv downloads its own Python 3.10, so the system Python version on the cluster does not matter.
+Keep large data and outputs in the group project space (`/storage/project/r-ldove6-0/<gt_username>`) or scratch, not in the 20 GB home directory.
 
 The `.env` file must contain:
 ```

@@ -18,6 +18,7 @@ results/
 # Python
 __pycache__/
 *.pyc
+.venv/
 
 # Generated plots (regenerable from notebooks)
 *.png
