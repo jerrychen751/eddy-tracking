@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from scipy.interpolate import RegularGridInterpolator
+from scipy.ndimage import uniform_filter
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
 
@@ -28,6 +29,7 @@ PET_EPOCH = dt.date(1950, 1, 1)
 # restricting the search keeps the line off coastal/subpolar currents.
 GS_LAT_BAND = (32.0, 43.0)
 SPEED_THRESHOLD_PERCENTILE = 70
+SEED_WINDOW = 5  # box width (cells) for the coherent-flow seed; ~70 km at 1/8 deg
 STREAMLINE_STEP_KM = 5.0
 MAX_GAP_STEPS = 10
 MAX_TRACE_STEPS = 2000
@@ -68,9 +70,7 @@ class GulfStreamCenterline:
         """
         Trace the Gulf Stream core by following the local surface-current direction.
 
-        Starts at the fastest finite cell, traces downstream and upstream, allows
-        short slow gaps, trims weak tails, and stops at the grid edge, land, or a
-        curl back onto an earlier part of the path.
+        Starts at the cell with the strongest local-average flow, traces downstream and upstream, allows short slow gaps, trims weak tails, and stops at the grid edge, land, or a curl back onto an earlier part of the path.
         """
         speed = np.hypot(ugos, vgos)
         if not np.any(np.isfinite(speed)):
@@ -80,7 +80,16 @@ class GulfStreamCenterline:
         u_at = RegularGridInterpolator((lat, lon), ugos, bounds_error=False, fill_value=np.nan)
         v_at = RegularGridInterpolator((lat, lon), vgos, bounds_error=False, fill_value=np.nan)
 
-        origin_i, origin_j = np.unravel_index(np.nanargmax(speed), speed.shape)
+        # Seed from the strongest *coherent* flow rather than the single fastest pixel: the cell with the highest mean speed over a fully-finite SEED_WINDOW box.
+        # This avoids lone coastal spikes whose NaN neighbours would make the interpolator return NaN at the seed and end the trace on its first step.
+        finite = np.isfinite(speed)
+        box = SEED_WINDOW * SEED_WINDOW
+        finite_in_box = uniform_filter(finite.astype(float), SEED_WINDOW, mode="constant") * box
+        local_mean = uniform_filter(np.where(finite, speed, 0.0), SEED_WINDOW, mode="constant") * box / np.maximum(finite_in_box, 1.0)
+        seed_score = np.where(finite_in_box >= box - 0.5, local_mean, -np.inf)
+        if seed_score.max() <= 0:
+            return cls(np.array([]), np.array([]))
+        origin_i, origin_j = np.unravel_index(np.argmax(seed_score), speed.shape)
         origin = np.array([lat[origin_i], lon[origin_j]], dtype=float)  # lat, lon
 
         def trace(direction: int) -> list[np.ndarray]:
