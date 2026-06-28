@@ -1,9 +1,10 @@
 """
 Compute per-eddy dynamical diagnostics from SWOT.
 
-The SWOT relative_vorticity field is normalized by Coriolis in the DUACS/MIOST
-files used here, so it is written as Rossby number (zeta/f). Outputs one
-dynamics.parquet per polarity under silver/eddy_dynamics/.
+The DUACS/MIOST source variable is named relative_vorticity, but in the files
+used here it is not raw relative vorticity in s^-1. It is already normalized by
+the Coriolis parameter, so the stored quantity is Rossby number (Ro = zeta/f).
+Outputs one dynamics.parquet per polarity under silver/eddy_dynamics/.
 """
 
 import argparse
@@ -41,11 +42,11 @@ def parse_file_date(fp: Path) -> dt.date:
     return dt.datetime.strptime(SWOT_DATE_RE.search(fp.name).group(), "%Y%m%d").date()
 
 
-def swot_files_by_date(swot_dir: Path) -> dict[dt.date, Path]:
+def index_swot_files_by_date(swot_dir: Path) -> dict[dt.date, Path]:
     return {parse_file_date(fp): fp for fp in sorted(swot_dir.glob("*.nc"))}
 
 
-def nearest_swot_file(files: dict[dt.date, Path], target: dt.date) -> Path | None:
+def find_nearest_swot_file(files: dict[dt.date, Path], target: dt.date) -> Path | None:
     """SWOT file on target, else the closest within SWOT_SEARCH_DAYS."""
     for delta in range(SWOT_SEARCH_DAYS + 1):
         for day in (target - dt.timedelta(delta), target + dt.timedelta(delta)):
@@ -83,18 +84,20 @@ def load_track_observations(experiment: str) -> pd.DataFrame:
 
 
 def load_rossby_field(swot_fp: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return lon, lat, and normalized relative vorticity (zeta/f) for one SWOT file."""
+    """Return lon, lat, and Rossby number from one SWOT file."""
     with xr.open_dataset(swot_fp) as ds:
         if "time" in ds["relative_vorticity"].dims:
             ds = ds.isel(time=0)
         lon = ds["longitude"].to_numpy()
         lat = ds["latitude"].to_numpy()
-        rossby = ds["relative_vorticity"].to_numpy()
-    return lon, lat, rossby
+        # Source variable name is relative_vorticity, but these DUACS/MIOST
+        # values are already normalized by Coriolis: Ro = zeta / f.
+        rossby_number = ds["relative_vorticity"].to_numpy()
+    return lon, lat, rossby_number
 
 
-def rossby_stats(
-    rossby: np.ndarray,
+def compute_rossby_stats(
+    rossby_number: np.ndarray,
     lon: np.ndarray,
     lat: np.ndarray,
     contour_lon: np.ndarray,
@@ -103,13 +106,13 @@ def rossby_stats(
     center_lat: float,
 ) -> dict:
     """Rossby number at the eddy center plus summary stats inside its contour."""
-    interp = RegularGridInterpolator((lat, lon), rossby, bounds_error=False, fill_value=np.nan)
+    interp = RegularGridInterpolator((lat, lon), rossby_number, bounds_error=False, fill_value=np.nan)
     center = float(interp([[center_lat, center_lon]])[0])
 
     lon2d, lat2d = np.meshgrid(lon, lat)
     points = np.column_stack([lon2d.ravel(), lat2d.ravel()])
     inside = MplPath(np.column_stack([contour_lon, contour_lat])).contains_points(points)
-    values = rossby.ravel()[inside]
+    values = rossby_number.ravel()[inside]
     values = values[np.isfinite(values)]
 
     if values.size == 0:
@@ -135,13 +138,13 @@ def rossby_stats(
 def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.DataFrame:
     rows = []
     for date, grp in obs.groupby("date"):
-        swot_fp = nearest_swot_file(swot_files, pd.Timestamp(date).date())
+        swot_fp = find_nearest_swot_file(swot_files, pd.Timestamp(date).date())
         if swot_fp is None:
             continue
-        lon, lat, rossby = load_rossby_field(swot_fp)
+        lon, lat, rossby_number = load_rossby_field(swot_fp)
         for row in grp.itertuples(index=False):
-            stats = rossby_stats(
-                rossby,
+            stats = compute_rossby_stats(
+                rossby_number,
                 lon,
                 lat,
                 row.contour_lon,
@@ -176,7 +179,7 @@ def main(experiment: str | None = None):
         experiment = args.experiment
 
     cfg = load_config(experiment)
-    swot_files = swot_files_by_date(resolve_data_dir(cfg, "swot_dir"))
+    swot_files = index_swot_files_by_date(resolve_data_dir(cfg, "swot_dir"))
     obs = load_track_observations(experiment)
     print(f"Computing Rossby diagnostics for {len(obs)} eddy observations...")
     dynamics = build_dynamics(obs, swot_files)

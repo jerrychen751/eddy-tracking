@@ -26,7 +26,7 @@ def parse_file_datetime(local_fp: Path) -> datetime:
     return datetime.strptime(match.group(1), '%Y%m%d')
 
 
-def eddy_output_paths(
+def resolve_eddy_output_paths(
     anticyclone_dir: Path, cyclone_dir: Path, date: datetime
 ) -> tuple[Path, Path]:
     """
@@ -42,7 +42,7 @@ def eddy_output_paths(
     )
 
 
-def id_one(
+def identify_one(
     local_fp: Path,
     date: datetime,
     out_anticyclone_path: Path,
@@ -146,9 +146,9 @@ def main(experiment: str | None = None):
         futures = {}
         for fp in local_filepaths:
             date = parse_file_datetime(fp)
-            a_path, c_path = eddy_output_paths(anticyclone_dir, cyclone_dir, date)
+            a_path, c_path = resolve_eddy_output_paths(anticyclone_dir, cyclone_dir, date)
             futures[executor.submit(
-                id_one,
+                identify_one,
                 fp,
                 date,
                 a_path,

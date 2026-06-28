@@ -71,7 +71,7 @@ PFT_ORDER = [
 ]
 
 
-def cluster_pft_label(pigments_in_cluster: list[str]) -> str:
+def build_cluster_pft_label(pigments_in_cluster: list[str]) -> str:
     """
     Build a ' + '-joined PFT label for a cluster, preserving PFT_ORDER.
     """
@@ -103,7 +103,7 @@ def clean_pigments(df: pd.DataFrame, pigment_cols: list[str]) -> pd.DataFrame:
     return df[valid]
 
 
-def pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
+def compute_pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
     """
     Concatenate all pigment data, compute a single pooled 12x12 correlation matrix.
     """
@@ -122,7 +122,7 @@ def pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
     return pigment_cols, corr
 
 
-def per_eddy_mean_correlation(
+def compute_per_eddy_mean_correlation(
     experiment: str, min_pixels: int
 ) -> tuple[list[str], np.ndarray, int]:
     """
@@ -164,7 +164,7 @@ def per_eddy_mean_correlation(
     return pigment_cols_ref, mean_corr, len(per_eddy_corrs)
 
 
-def linkage_from_correlation(corr: np.ndarray) -> np.ndarray:
+def compute_linkage_from_correlation(corr: np.ndarray) -> np.ndarray:
     """
     Convert a correlation matrix to 1 - r distance and run Ward's linkage.
     """
@@ -212,7 +212,7 @@ def save_dendrogram(
     ax.set_ylim(top=ax.get_ylim()[1] * 1.18)
     for cid, xs in cluster_tick_xs.items():
         mid = (min(xs) + max(xs)) / 2
-        label = cluster_pft_label(cluster_members[cid])
+        label = build_cluster_pft_label(cluster_members[cid])
         ax.text(mid, y_anno, label, ha="center", va="bottom",
                 fontsize=8, fontweight="bold", color="0.2",
                 bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
@@ -244,7 +244,7 @@ def save_cluster_table(
     cluster_to_label: dict[int, str] = {}
     for cid in sorted(set(assignments)):
         members = [p for p, c in zip(pigment_names, assignments) if c == cid]
-        cluster_to_label[cid] = cluster_pft_label(members)
+        cluster_to_label[cid] = build_cluster_pft_label(members)
     table["cluster_pft_group"] = table["cluster"].map(cluster_to_label)
 
     table = table.sort_values(["cluster", "pigment"]).reset_index(drop=True)
@@ -272,10 +272,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.per_eddy:
-        pigment_cols, mean_corr, n_eddies = per_eddy_mean_correlation(
+        pigment_cols, mean_corr, n_eddies = compute_per_eddy_mean_correlation(
             args.experiment, min_pixels=args.min_pixels,
         )
-        Z = linkage_from_correlation(mean_corr)
+        Z = compute_linkage_from_correlation(mean_corr)
         suffix = "_per_eddy"
         title = (f"Hierarchical Clustering of Diagnostic Pigments "
                  f"(per-eddy, avg over {n_eddies} eddies)")
@@ -283,8 +283,8 @@ def main() -> None:
         np.save(resolve_output_dir(args.experiment, "pigments_clustering")
                 / f"mean_correlation{suffix}.npy", mean_corr)
     else:
-        pigment_cols, corr = pooled_correlation(args.experiment)
-        Z = linkage_from_correlation(corr)
+        pigment_cols, corr = compute_pooled_correlation(args.experiment)
+        Z = compute_linkage_from_correlation(corr)
         suffix = ""
         title = "Hierarchical Clustering of Diagnostic Pigments (Kramer method, pooled)"
 

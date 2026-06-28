@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
-from gulf_stream import centerlines_by_date, signed_distance_km
+from gulf_stream import index_centerlines_by_date, compute_signed_distance_km
 from utils.config import load_config, resolve_output_dir, resolve_gold_dir
 
 parser = argparse.ArgumentParser()
@@ -63,7 +63,7 @@ def aggregate_eddy_days() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def track_features() -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_track_features() -> tuple[pd.DataFrame, pd.DataFrame]:
     """Per-obs (radius_km, amplitude_cm) and per-track (birth/death) for both polarities."""
     obs_frames, life_rows = [], []
     for polarity, pol_val in [("anticyclone", 0), ("cyclone", 1)]:
@@ -87,7 +87,7 @@ def track_features() -> tuple[pd.DataFrame, pd.DataFrame]:
     return pd.concat(obs_frames, ignore_index=True), pd.DataFrame(life_rows)
 
 
-def eddy_dynamics() -> pd.DataFrame:
+def load_eddy_dynamics() -> pd.DataFrame:
     """Per-observation Rossby diagnostics for both polarities, if generated."""
     frames = []
     for polarity, pol_val in [("anticyclone", 0), ("cyclone", 1)]:
@@ -104,7 +104,7 @@ def eddy_dynamics() -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def gs_distance(centerline_by_date, date, center_lon, center_lat) -> float:
+def compute_gs_distance(centerline_by_date, date, center_lon, center_lat) -> float:
     """Signed nearest-polyline distance (km, + = north of the jet) to the nearest-day streamline."""
     base = pd.Timestamp(date).date()
     centerline = next(
@@ -115,7 +115,7 @@ def gs_distance(centerline_by_date, date, center_lon, center_lat) -> float:
     )
     if centerline is None:
         return np.nan
-    dist, _ = signed_distance_km(centerline.lon, centerline.lat, center_lon, center_lat)
+    dist, _ = compute_signed_distance_km(centerline.lon, centerline.lat, center_lon, center_lat)
     return dist
 
 
@@ -134,7 +134,7 @@ def main():
         print(f"Dropped {n_before - len(eddy)} eddy-days with < {MIN_EDDY_PIXELS} interior pixels")
 
     # Eddy size/strength (nearest track obs by date) + lifetime
-    obs, life = track_features()
+    obs, life = build_track_features()
     eddy = pd.merge_asof(
         eddy.sort_values("date"), obs.sort_values("date"),
         on="date", by=["polarity", "track_id"], direction="nearest",
@@ -151,7 +151,7 @@ def main():
     eddy["season"] = eddy["date"].dt.month.map(SEASON)
 
     # Rossby diagnostics (nearest track obs by date, same convention as size/strength).
-    dynamics = eddy_dynamics()
+    dynamics = load_eddy_dynamics()
     if not dynamics.empty:
         eddy = pd.merge_asof(
             eddy.sort_values("date"), dynamics.sort_values("date"),
@@ -166,9 +166,9 @@ def main():
     movement["polarity"] = movement["polarity"].map({"anticyclone": 0, "cyclone": 1})
     eddy = eddy.merge(movement[["polarity", "track_id", "movement"]], on=["polarity", "track_id"], how="left")
     streamline = pd.read_parquet(GULF_STREAM_DIR / "streamline.parquet")
-    centerline_by_date = centerlines_by_date(streamline)
+    centerline_by_date = index_centerlines_by_date(streamline)
     eddy["gs_dist_km"] = [
-        gs_distance(centerline_by_date, d, lo, la)
+        compute_gs_distance(centerline_by_date, d, lo, la)
         for d, lo, la in zip(eddy["date"], eddy["center_lon"], eddy["center_lat"])
     ]
 

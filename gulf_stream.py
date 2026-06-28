@@ -141,7 +141,7 @@ class GulfStreamCenterline:
         return cls(path[:, 1], path[:, 0])
 
 
-def streamline_for_file(fp: Path) -> GulfStreamCenterline:
+def trace_streamline_for_file(fp: Path) -> GulfStreamCenterline:
     """Ordered Gulf Stream streamline for one SWOT day."""
     with xr.open_dataset(fp) as ds:
         if "time" in ds.ugos.dims:
@@ -167,7 +167,7 @@ def centerline_to_frame(date: dt.date, centerline: GulfStreamCenterline) -> pd.D
     })
 
 
-def centerlines_by_date(streamline_df: pd.DataFrame) -> dict[dt.date, GulfStreamCenterline]:
+def index_centerlines_by_date(streamline_df: pd.DataFrame) -> dict[dt.date, GulfStreamCenterline]:
     """Read silver streamline rows into ordered centerlines keyed by date."""
     centerlines: dict[dt.date, GulfStreamCenterline] = {}
     for date, grp in streamline_df.groupby("date"):
@@ -179,7 +179,7 @@ def centerlines_by_date(streamline_df: pd.DataFrame) -> dict[dt.date, GulfStream
     return centerlines
 
 
-def signed_distance_km(
+def compute_signed_distance_km(
     streamline_lon: np.ndarray, streamline_lat: np.ndarray, center_lon: float, center_lat: float
 ) -> tuple[float, str]:
     """
@@ -276,7 +276,7 @@ def main(experiment: str | None = None):
     centerline_by_date: dict[dt.date, GulfStreamCenterline] = {}
     for fp in swot_files:
         date = parse_file_date(fp)
-        centerline = streamline_for_file(fp)
+        centerline = trace_streamline_for_file(fp)
         centerline_by_date[date] = centerline
         streamline_rows.append(centerline_to_frame(date, centerline))
     streamline_df = pd.concat(streamline_rows, ignore_index=True)
@@ -290,8 +290,8 @@ def main(experiment: str | None = None):
     for (polarity, track_id), grp in obs.groupby(["polarity", "track_id"]):
         grp = grp.sort_values("date")
         birth, death = grp.iloc[0], grp.iloc[-1]
-        _, birth_side = _streamline_side(centerline_by_date, birth)
-        _, death_side = _streamline_side(centerline_by_date, death)
+        _, birth_side = _classify_streamline_side(centerline_by_date, birth)
+        _, death_side = _classify_streamline_side(centerline_by_date, death)
         movement_rows.append({
             "polarity": polarity,
             "track_id": track_id,
@@ -307,12 +307,12 @@ def main(experiment: str | None = None):
     print(f"Wrote eddy_movement.parquet: {len(movement_df)} tracks, classes {counts}")
 
 
-def _streamline_side(centerline_by_date, row) -> tuple[float, str]:
+def _classify_streamline_side(centerline_by_date, row) -> tuple[float, str]:
     """Signed distance + side for one observation, using its date's streamline."""
     centerline = centerline_by_date.get(row["date"].date())
     if centerline is None:
         return np.nan, ""
-    return signed_distance_km(centerline.lon, centerline.lat, row["center_lon"], row["center_lat"])
+    return compute_signed_distance_km(centerline.lon, centerline.lat, row["center_lon"], row["center_lat"])
 
 
 if __name__ == "__main__":
