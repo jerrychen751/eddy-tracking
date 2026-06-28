@@ -1,6 +1,9 @@
 # Slurm job scripts
 
-HPC Slurm job scripts for running the eddy-tracking pipeline on PACE Phoenix.
+HPC Slurm job scripts for running the older core/PFT branch of the
+eddy-tracking pipeline on PACE Phoenix. The local `run_pipeline.py` now runs
+the full gold-table path; these Slurm scripts do not yet submit `gulf_stream`,
+`eddy_dynamics`, `background`, or `build_gold_table`.
 All jobs use `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
 `inferno` is the default charged QOS; switch to `--qos=embers` for free but preemptible backfill.
 
@@ -14,14 +17,14 @@ All jobs use `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
 ## How to submit
 
 ```bash
-# Submit the full pipeline for an experiment
+# Submit the core/PFT branch for an experiment
 EXPERIMENT=gulf_stream_20241001_20250701 bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701
 
 # Resume from a specific stage (e.g., if eddy_id already ran)
 bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701 --from eddy_track
 ```
 
-`submit_pipeline.sh` submits download stages in parallel (no mutual dependencies), then chains all subsequent stages with `--dependency=afterok` so each stage only starts after the previous one succeeds.
+`submit_pipeline.sh` submits download stages in parallel (no mutual dependencies), then chains all subsequent core/PFT stages with `--dependency=afterok` so each stage only starts after the previous one succeeds.
 
 ## Stage resource summary
 

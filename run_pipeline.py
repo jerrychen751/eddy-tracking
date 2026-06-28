@@ -5,9 +5,10 @@ Runs pipeline stages in the correct order with parallel downloads
 and stage selection for partial re-runs.
 
 Usage:
-    python run_pipeline.py <experiment>                          # all stages
+    python run_pipeline.py <experiment>                          # gold-table stages
     python run_pipeline.py <experiment> stage1 stage2 ...        # specific stages
     python run_pipeline.py <experiment> --from <stage>           # from stage onward
+    python run_pipeline.py <experiment> run_phytoclass           # optional PFT branch
 """
 
 import argparse
@@ -20,8 +21,9 @@ from pathlib import Path
 
 from utils.config import PROJECT_ROOT
 
-# Stage order — each name matches its script ({stage}.py)
-ALL_STAGES = [
+# Default stage order for the analysis-ready gold table.
+# Each name matches its script ({stage}.py).
+DEFAULT_STAGES = [
     "download_swot",
     "download_pace",
     "download_sst_sss",
@@ -29,8 +31,19 @@ ALL_STAGES = [
     "eddy_track",
     "collocate_pace",
     "run_sdp",
+    "gulf_stream",
+    "eddy_dynamics",
+    "background",
+    "build_gold_table",
+]
+
+# Optional branch products that are not joined into the current gold table.
+OPTIONAL_STAGES = [
     "run_phytoclass",
 ]
+
+# Canonical run order used for explicit stage lists too.
+VALID_STAGES = DEFAULT_STAGES + OPTIONAL_STAGES
 
 # Stages that are independent and can run in parallel
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
@@ -89,29 +102,31 @@ def run_parallel_downloads(experiment, stages_to_run):
 def resolve_stages(args_stages, from_stage):
     """
     Three modes:
-        1. No stages and no --from → all stages
-        2. --from <stage> → that stage and everything after it
+        1. No stages and no --from → default gold-table stages
+        2. --from <stage> → that stage and everything after it in its branch
         3. Explicit stage list → only those stages
     """
     if from_stage:
-        if from_stage not in ALL_STAGES:
+        if from_stage not in VALID_STAGES:
             print(
                 f"ERROR: Unknown stage '{from_stage}'.\n"
-                f"Valid stages: {', '.join(ALL_STAGES)}",
+                f"Valid stages: {', '.join(VALID_STAGES)}",
                 file=sys.stderr,
             )
             sys.exit(1)
-        start_idx = ALL_STAGES.index(from_stage)
-        return ALL_STAGES[start_idx:]
+        if from_stage in DEFAULT_STAGES:
+            start_idx = DEFAULT_STAGES.index(from_stage)
+            return DEFAULT_STAGES[start_idx:]
+        return [from_stage]
 
     if not args_stages:
-        return list(ALL_STAGES)
+        return list(DEFAULT_STAGES)
 
     for stage in args_stages:
-        if stage not in ALL_STAGES:
+        if stage not in VALID_STAGES:
             print(
                 f"ERROR: Unknown stage '{stage}'.\n"
-                f"Valid stages: {', '.join(ALL_STAGES)}",
+                f"Valid stages: {', '.join(VALID_STAGES)}",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -145,8 +160,9 @@ def main():
     stages_set = set(stages_to_run)
     run_parallel_downloads(args.experiment, stages_set)
 
-    # Sequential stages (everything after downloads)
-    sequential = [s for s in ALL_STAGES if s not in PARALLEL_STAGES]
+    # Sequential stages (everything after downloads), in canonical order even
+    # when the user passes an explicit subset.
+    sequential = [s for s in VALID_STAGES if s not in PARALLEL_STAGES]
     for stage in sequential:
         if stage in stages_set:
             run_stage(args.experiment, stage)
