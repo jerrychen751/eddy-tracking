@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from matplotlib.path import Path as MplPath
-from py_eddy_tracker.observations.tracking import TrackEddiesObservations
+from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
 from utils.sdp import run_sdp

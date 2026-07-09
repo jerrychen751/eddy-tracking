@@ -32,7 +32,6 @@ dependencies = [
     "opencv-python==4.11.0.86",
     "pint==0.24.4",
     "polygon3==3.0.9.1",
-    "pyeddytracker",            # py-eddy-tracker from PyPI; eddy_id.py bypasses PET CLI filename templating
 ]
 
 [dependency-groups]

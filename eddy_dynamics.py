@@ -73,7 +73,7 @@ def track_observations_to_frame(tracked, polarity: str) -> pd.DataFrame:
 
 
 def load_track_observations(experiment: str) -> pd.DataFrame:
-    from py_eddy_tracker.observations.tracking import TrackEddiesObservations
+    from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
     frames = []
     for polarity in ("cyclone", "anticyclone"):

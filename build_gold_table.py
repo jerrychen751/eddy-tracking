@@ -9,7 +9,7 @@ import datetime as dt
 
 import numpy as np
 import pandas as pd
-from py_eddy_tracker.observations.tracking import TrackEddiesObservations
+from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
 from gulf_stream import index_centerlines_by_date, compute_signed_distance_km
 from utils.config import load_config, resolve_output_dir, resolve_gold_dir

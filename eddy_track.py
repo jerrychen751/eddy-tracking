@@ -11,7 +11,7 @@ import argparse
 import shutil
 from pathlib import Path
 
-from py_eddy_tracker.tracking import Correspondances
+from utils.py_eddy_tracker.tracking import Correspondances
 
 from utils.config import resolve_output_dir, load_config
 
