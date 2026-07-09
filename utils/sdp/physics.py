@@ -216,7 +216,7 @@ def gsm_invert(
     def cost_fn(IOPs_trial):
         return gsm_cost(IOPs_trial, rrs, aw, bbw, bbpstar, A, B, admstar)
 
-    iops_opt, _, _, _, _ = fmin(
+    iops_opt, _, _, _, warnflag = fmin(
         cost_fn,
         IOPSinit,
         xtol=1e-9,
@@ -226,6 +226,9 @@ def gsm_invert(
         full_output=True,
         disp=False
     )
+
+    if warnflag != 0:
+        raise RuntimeError(f"GSM inversion failed to converge (scipy.optimize.fmin warnflag={warnflag})")
 
     return iops_opt
 
@@ -296,8 +299,9 @@ def get_rrs_residuals(
 
     # bbp slope is a function of rrs (just below surface):
     # You will need to define rrs440 and rrs555 based on your rrs data
-    Rrs_440 = Rrs[440].values
-    bbp_s = 2.0 * (1 - 1.2 * np.exp(-0.9 * Rrs_440 / Rrs_555))
+    rrs_440 = rrs[440].values
+    rrs_555 = rrs[555].values
+    bbp_s = 2.0 * (1 - 1.2 * np.exp(-0.9 * rrs_440 / rrs_555))
     bbp = (443 / wavelengths.reshape(-1, 1)) ** bbp_s 
 
     # Put IOPs together: run for each spectrum
