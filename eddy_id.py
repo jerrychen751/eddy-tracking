@@ -10,11 +10,14 @@ import argparse
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import cast
 import re
 import xarray as xr
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
+from utils.subset import swot_is_valid, COAST_MIN_DISTANCE_PIXELS
 
 # Correspondances takes a sorted list of files, so naming should be in YYYY-MM-DD format.
 # Use separate naming prefixes for cyclonic/anticyclonic
@@ -51,7 +54,7 @@ def identify_one(
     lat_range: tuple[float, float],
     bessel_wavelength: float,
     id_step: float,
-    id_shape_error: float,
+    id_shape_error: int,
 ) -> tuple[Path, Path]:
     """
     Identify eddies in a single SWOT L4 SSH file.
@@ -75,10 +78,25 @@ def identify_one(
         lon = ds.coords['longitude'].to_numpy()
         lat = ds.coords['latitude'].to_numpy()
 
-    i_lon_min = np.searchsorted(lon, lon_min, 'left')
-    i_lon_max = np.searchsorted(lon, lon_max, 'right')
-    i_lat_min = np.searchsorted(lat, lat_min, 'left')
-    i_lat_max = np.searchsorted(lat, lat_max, 'right')
+        i_lon_min = np.searchsorted(lon, lon_min, 'left')
+        i_lon_max = np.searchsorted(lon, lon_max, 'right')
+        i_lat_min = np.searchsorted(lat, lat_min, 'left')
+        i_lat_max = np.searchsorted(lat, lat_max, 'right')
+
+        region = ds.isel(
+            longitude=slice(i_lon_min, i_lon_max),
+            latitude=slice(i_lat_min, i_lat_max),
+        )
+        if 'time' in region['adt'].dims:
+            region = region.isel(time=0)
+        # netCDF stores (latitude, longitude); RegularGridDataset transposes
+        # to (longitude, latitude) internally, so coast_ok must match that.
+        # distance_transform_edt has no type stubs; with default args it always
+        # returns a plain array, but pyright infers the full return-type union
+        # (it also supports returning a tuple or writing in place and returning
+        # None) from the untyped source.
+        distance_to_nearest_invalid = cast(np.ndarray, distance_transform_edt(swot_is_valid(region)))
+        coast_ok = distance_to_nearest_invalid.T >= COAST_MIN_DISTANCE_PIXELS
 
     grid = RegularGridDataset(
         filename=local_fp,
@@ -93,6 +111,14 @@ def identify_one(
 
     # Apply bessel high pass filter
     grid.bessel_high_filter('adt', bessel_wavelength)
+
+    # PET's masked-pixel rejection only catches NaN, not the finite-but-spurious
+    # coastal velocity artifact; force-load ugos/vgos here (normally lazy) so
+    # coast_ok's buffer applies before eddy_identification reads them.
+    grid.grid('ugos')
+    grid.grid('vgos')
+    for varname in ('adt', 'ugos', 'vgos'):
+        grid.vars[varname].mask = grid.vars[varname].mask | ~coast_ok
 
     # Perform eddy id
     a, c = grid.eddy_identification(
@@ -117,6 +143,7 @@ def main(experiment: str | None = None):
         parser.add_argument("experiment")
         args = parser.parse_args()
         experiment = args.experiment
+    assert experiment is not None
 
     cfg = load_config(experiment)
     lon_range = tuple(cfg["base"]["region"]["lon_range"])

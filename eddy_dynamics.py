@@ -14,11 +14,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 from matplotlib.path import Path as MplPath
 from scipy.interpolate import RegularGridInterpolator
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
+from utils.subset import load_rossby_field
 
 PET_EPOCH = dt.date(1950, 1, 1)
 SWOT_DATE_RE = re.compile(r"\d{8}")
@@ -81,19 +81,6 @@ def load_track_observations(experiment: str) -> pd.DataFrame:
         tracked = TrackEddiesObservations.load_file(str(track_dir / f"{polarity}_tracks.zarr"))
         frames.append(track_observations_to_frame(tracked, polarity))
     return pd.concat(frames, ignore_index=True)
-
-
-def load_rossby_field(swot_fp: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return lon, lat, and Rossby number from one SWOT file."""
-    with xr.open_dataset(swot_fp) as ds:
-        if "time" in ds["relative_vorticity"].dims:
-            ds = ds.isel(time=0)
-        lon = ds["longitude"].to_numpy()
-        lat = ds["latitude"].to_numpy()
-        # Source variable name is relative_vorticity, but these DUACS/MIOST
-        # values are already normalized by Coriolis: Ro = zeta / f.
-        rossby_number = ds["relative_vorticity"].to_numpy()
-    return lon, lat, rossby_number
 
 
 def compute_rossby_stats(
