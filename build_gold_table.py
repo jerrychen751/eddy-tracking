@@ -1,7 +1,7 @@
 """
 Assemble the gold eddy-pigment table: one analysis-ready row per eddy-day.
 
-Aggregates the per-pixel pigments from run_sdp (silver/pigments) to eddy-interior means, attaches eddy size/strength/age (tracks), Rossby diagnostics (eddy_dynamics), movement and signed Gulf-Stream distance (gulf_stream), season, and the log-ratio targets once the background means exist. Writes gold/eddy_pigment_table.parquet.
+Aggregates the per-pixel pigments from run_sdp (silver/pigments) to eddy-interior means, attaches eddy size/strength/age (tracks), Rossby diagnostics (eddy_dynamics), movement and signed Gulf-Stream distance (gulf_stream), a cyclical time-of-year encoding, and the log-ratio targets once the background means exist. Writes gold/eddy_pigment_table.parquet.
 """
 
 import argparse
@@ -34,8 +34,6 @@ PIGMENTS = {
     "Perid": "Perid",
 }
 PET_EPOCH = dt.date(1950, 1, 1)
-SEASON = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
-          6: "JJA", 7: "JJA", 8: "JJA", 9: "SON", 10: "SON", 11: "SON"}
 # Eddy-days with fewer interior pixels than this give unreliable means and are dropped.
 MIN_EDDY_PIXELS = 10
 
@@ -148,7 +146,11 @@ def main():
     eddy["age_frac"] = eddy["age_frac"].clip(0, 1)
     eddy["birth_observed"] = eddy["birth_date"] > EDDY_START
     eddy["death_observed"] = eddy["death_date"] < EDDY_END
-    eddy["season"] = eddy["date"].dt.month.map(SEASON)
+    # Cyclical yd/365 encoding; convention from Gregor et al. (2018)
+    yd = eddy["date"].dt.dayofyear - 1
+    angle = 2 * np.pi * yd / 365
+    eddy["time_of_year_cos"] = np.cos(angle)
+    eddy["time_of_year_sin"] = np.sin(angle)
 
     # Rossby diagnostics (nearest track obs by date, same convention as size/strength).
     dynamics = load_eddy_dynamics()
