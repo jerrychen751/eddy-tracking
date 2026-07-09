@@ -1,0 +1,127 @@
+# Changes from the base gulf_stream_pigment_influencers_20241001_20251231
+# experiment (v0):
+#
+# 1. Eddy boundaries here are PET's *speed contour* (contour_lon_s/lat_s,
+#    radius_s) instead of the *effective contour* (contour_lon_e/lat_e,
+#    radius_e). PET computes both for every identified eddy: the effective
+#    contour is the outermost closed SSH contour (full anomaly footprint,
+#    including the calm low-Rossby-number skirt); the speed contour is the
+#    inner ring where the average rotational speed peaks, which tracks
+#    high-Ro regions much more closely. See collocate_pace.py,
+#    eddy_dynamics.py, background.py, and build_gold_table.py, which all now
+#    read the _s fields.
+#
+# 2. The gold table's `season` column (DJF/MAM/JJA/SON, one-hot encoded
+#    downstream) is replaced by a cyclical time_of_year_cos/time_of_year_sin
+#    pair: cos/sin of 2*pi*yd/365, yd = days elapsed since Jan 1. This keeps
+#    dates near a year boundary (e.g. Dec 31 vs Jan 1) close together in
+#    feature space, which a discrete season bucket cannot represent. Follows
+#    the yd/365 convention in Gregor et al. (2018), as used for sz1/sz2 in
+#    Song et al. (2026, AIES). See build_gold_table.py.
+#
+# 3. Eddy identification excludes the Great Lakes (hardcoded box, lon
+#    [-81,-75] x lat [40,44]) and any pixel within 8 SWOT grid pixels
+#    (~1 degree) of an invalid SWOT cell. The Great Lakes box is applied only
+#    in background.py's whole-grid candidate scan. The coastal buffer is
+#    applied upstream in eddy_id.py itself, by masking adt/ugos/vgos on PET's
+#    grid before identification runs, not as a downstream pixel filter - so
+#    it changes which eddies get identified and how their tracks look, not
+#    just which of an eddy's pixels count toward its own statistics. An eddy
+#    whose true boundary needs to reach into the buffer zone to close a
+#    contour may shrink or fail to form on the days it's close to shore. See
+#    eddy_id.py, eddy_dynamics.py, background.py, and utils/subset.py
+#    (build_exclusion_mask, swot_is_valid, load_rossby_field).
+#
+# This experiment keeps the standard bronze/silver/gold layout: bronze/ and
+# silver/gulf_stream are real directory symlinks into the base experiment's
+# data/ tree (gulf_stream.py only uses eddy center position, unaffected by
+# either contour or coastal-mask changes). Every other silver stage, plus
+# gold, is freshly computed here: eddy_id/eddy_track because change 3 alters
+# identification itself, and collocate_pace/run_sdp/eddy_dynamics/background/
+# gold because they depend on the contour choice (change 1) and, for gold,
+# the date encoding (change 2).
+
+base:
+
+  dataset: "gulf_stream_pigment_influencers_20241001_20251231_v1"
+
+  region:
+    lon_range: [-81, -56]
+    lat_range: [29, 44]
+
+  time:
+    # SWOT SSH window for eddy detection/tracking. Starts ~18 months before the PACE
+    # window so eddy births are observed and age_frac is not truncated at the edge.
+    eddy_date_range: ["2023-03-28", "2025-12-31"]
+    # PACE Rrs + ancillary window: post-commissioning PACE through the SSH end date.
+    rrs_date_range: ["2024-10-01", "2025-12-31"]
+
+  # Paths resolve to data/<dataset>/<dir>/
+  data:
+    root: "data"
+    swot_dir: "swot_l4"
+    pace_dir: "pace_l3_8d"
+    sss_dir: "sss"
+    sst_dir: "sst"
+    sst_raw_tmp: "sst_raw_tmp"
+    sss_raw_tmp: "sss_raw_tmp"
+
+  download:
+    swot:
+      # AVISO experimental DUACS-MIOST L4 including SWOT, v3.0: gapless 2023-03-28 to
+      # 2025-12-31 (a flat dir, no science/calval split, unlike v2_0_1).
+      ftp_dir: "swot_products/l4_karin_nadir/v3_0/miost"
+      max_workers: 2
+
+    pace:
+      temporal_resolution: "8D"
+
+    sst:
+      collection_id: "C1615905770-OB_DAAC"
+      download_threads: 4
+
+    sss:
+      collection_id: "C2208422957-POCLOUD"
+      num_requests_workers: 4
+      download_chunk_size_mb: 16
+
+eddy_id:
+  max_workers: 6
+
+  bessel_high_filter_wavelength: 500  # high-pass cutoff (km)
+
+  step: 0.004      # SSH contour step (m)
+  shape_error: 55  # max % deviation from circle
+
+eddy_track:
+  # Max consecutive missed days before breaking a track
+  virtual: 3
+
+  # Discard tracks shorter than this (days)
+  min_track_days: 60
+
+  # Post-tracking position smoothing (half-window sizes)
+  position_filter:
+    median_half_window: 1  # removes single-day outlier jumps
+    loess_half_window: 5   # smooths trajectory
+
+collocate_pace:
+  min_coverage: 0.8
+  temporal_resolution: "8D"
+
+  # Keep only eddy-days within the PACE window. Eddies are tracked over the wider
+  # eddy_date_range, but collocation should not retain eddy-days outside rrs_date_range.
+  date_range: ["2024-10-01", "2025-12-31"]
+
+  # Restrict to specific track IDs (omit to process all)
+  # track_ids: [5, 12, 20]
+
+phytoclass:
+  seed: 42
+  cluster_threshold: 0.65
+  min_cluster_size: 30
+  n_iter: 500
+  n_neighbors: 120
+  max_workers: 12  # parallel workers for per-eddy SA; set to 1 for debugging
+  f_matrix: f_matrix.csv  # relative to this config dir
+  min_max: min_max.csv
