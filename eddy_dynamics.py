@@ -59,8 +59,8 @@ def track_observations_to_frame(tracked, polarity: str) -> pd.DataFrame:
     """Non-virtual observations from one py-eddy-tracker object."""
     keep = ~tracked.virtual.astype(bool)
     days = [PET_EPOCH + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
-    contour_lon = (tracked.contour_lon_e[keep] + 180) % 360 - 180
-    contour_lat = tracked.contour_lat_e[keep]
+    contour_lon = (tracked.contour_lon_s[keep] + 180) % 360 - 180
+    contour_lat = tracked.contour_lat_s[keep]
     return pd.DataFrame({
         "polarity": polarity,
         "track_id": tracked.track[keep].astype(int),

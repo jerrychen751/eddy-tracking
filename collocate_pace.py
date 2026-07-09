@@ -145,8 +145,8 @@ def build_date_eddy_index(
         mask = tracked.track == tid
         times = tracked.time[mask]
         virtuals = tracked.virtual[mask]
-        contour_lons = tracked.contour_lon_e[mask]
-        contour_lats = tracked.contour_lat_e[mask]
+        contour_lons = tracked.contour_lon_s[mask]
+        contour_lats = tracked.contour_lat_s[mask]
         center_lons = tracked.longitude[mask]
         center_lats = tracked.latitude[mask]
 

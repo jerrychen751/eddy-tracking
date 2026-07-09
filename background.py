@@ -134,8 +134,8 @@ def load_eddy_contours(
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
         keep = ~tracked.virtual.astype(bool)
         days = [PET_EPOCH + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
-        contour_lon = (tracked.contour_lon_e[keep] + 180) % 360 - 180
-        contour_lat = tracked.contour_lat_e[keep]
+        contour_lon = (tracked.contour_lon_s[keep] + 180) % 360 - 180
+        contour_lat = tracked.contour_lat_s[keep]
         for i, day in enumerate(days):
             contours[day].append((contour_lon[i], contour_lat[i]))
     return contours

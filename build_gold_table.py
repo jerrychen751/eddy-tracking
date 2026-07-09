@@ -75,7 +75,7 @@ def build_track_features() -> tuple[pd.DataFrame, pd.DataFrame]:
             "polarity": pol_val,
             "track_id": tr.track[keep].astype(int),
             "date": days,
-            "radius_km": tr.radius_e[keep] / 1000.0,
+            "radius_km": tr.radius_s[keep] / 1000.0,
             "amplitude_cm": tr.amplitude[keep] * 100.0,
         }).sort_values("date")
         obs_frames.append(df)
