@@ -1,142 +1,229 @@
-"""Download daily L4 SSH files from AVISO FTP in parallel, then trim to region."""
+"""Download, trim, and optionally mask daily AVISO L4 SSH files."""
 
 import argparse
+import os
+import re
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import datetime
 from ftplib import FTP
 from pathlib import Path
-import os
-import re
-import sys
-import tempfile
+from threading import Lock
 
 from dotenv import load_dotenv
+import numpy as np
+from scipy.ndimage import distance_transform_edt
 import xarray as xr
 
 from utils.config import load_config, resolve_data_dir
 
-load_dotenv()
 
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-args = parser.parse_args()
+SWOT_VALIDITY_FIELDS = ("adt", "ugos", "vgos", "relative_vorticity")
+COAST_MIN_DISTANCE_PIXELS = 8
+GREAT_LAKES_LON_RANGE = (-81, -75)
+GREAT_LAKES_LAT_RANGE = (40, 44)
+# netCDF4/HDF5 serialization is not safe across downloader threads.
+_NETCDF_IO_LOCK = Lock()
 
-# Config from YAML
-cfg = load_config(args.experiment)
 
-REMOTE_DIR = cfg["base"]["download"]["swot"]["ftp_dir"]
-LOCAL_DIR = resolve_data_dir(cfg, "swot_dir")
-MAX_WORKERS = cfg["base"]["download"]["swot"]["max_workers"]
-DATE_RANGE = tuple(cfg["base"]["time"]["eddy_date_range"])
-LON_RANGE = tuple(cfg["base"]["region"]["lon_range"])
-LAT_RANGE = tuple(cfg["base"]["region"]["lat_range"])
+@dataclass(frozen=True)
+class DownloadSettings:
+    """Configuration and credentials for one SWOT download run."""
 
-# Credentials from .env — fail early with a clear message rather than a bare KeyError
-for _var in ("FTP_HOST", "FTP_USER", "FTP_PASSWORD"):
-    if not os.environ.get(_var):
-        sys.exit(f"Missing required env var: {_var} (set in .env or environment)")
+    host: str
+    user: str
+    password: str = field(repr=False)
+    remote_dir: str
+    local_dir: Path
+    max_workers: int
+    date_range: tuple[str | None, str | None]
+    longitude_range: tuple[float, float]
+    latitude_range: tuple[float, float]
+    filter_open_ocean: bool
 
-HOST = os.environ["FTP_HOST"]
-USER = os.environ["FTP_USER"]
-PASSWORD = os.environ["FTP_PASSWORD"]
 
-def list_remote_files_with_sizes() -> list[tuple[str, int | None]]:
-    """
-    Like list_remote_files, but also returns file sizes in bytes.
-    """
-    with FTP(HOST, USER, PASSWORD) as ftp:
-        files = [f for f in ftp.nlst(REMOTE_DIR) if f.endswith('.nc')]
-        ftp.voidcmd("TYPE I")  # switch to binary mode (must be after nlst)
-        sized = [(f, ftp.size(f)) for f in files]
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
 
-    return sized
+
+def _load_settings(experiment: str) -> DownloadSettings:
+    load_dotenv()
+    for variable_name in ("FTP_HOST", "FTP_USER", "FTP_PASSWORD"):
+        if not os.environ.get(variable_name):
+            raise SystemExit(
+                f"Missing required env var: {variable_name} "
+                "(set in .env or environment)"
+            )
+
+    cfg = load_config(experiment)
+    return DownloadSettings(
+        host=os.environ["FTP_HOST"],
+        user=os.environ["FTP_USER"],
+        password=os.environ["FTP_PASSWORD"],
+        remote_dir=cfg["base"]["download"]["swot"]["ftp_dir"],
+        local_dir=resolve_data_dir(cfg, "swot_dir"),
+        max_workers=cfg["base"]["download"]["swot"]["max_workers"],
+        date_range=tuple(cfg["base"]["time"]["eddy_date_range"]),
+        longitude_range=tuple(cfg["base"]["region"]["lon_range"]),
+        latitude_range=tuple(cfg["base"]["region"]["lat_range"]),
+        filter_open_ocean=cfg["base"]["download"]["swot"].get(
+            "filter_open_ocean", False
+        ),
+    )
+
+
+def _list_remote_files_with_sizes(
+    settings: DownloadSettings,
+) -> list[tuple[str, int | None]]:
+    """List remote NetCDF paths with their sizes in bytes."""
+    with FTP(settings.host, settings.user, settings.password) as ftp:
+        remote_files = [
+            path for path in ftp.nlst(settings.remote_dir) if path.endswith(".nc")
+        ]
+        ftp.voidcmd("TYPE I")
+        return [(path, ftp.size(path)) for path in remote_files]
+
 
 def filter_by_date_range(
     files: list[tuple[str, int | None]],
     date_range: tuple[str | None, str | None],
 ) -> list[tuple[str, int | None]]:
-    start = datetime.strptime(date_range[0], '%Y-%m-%d') if date_range[0] else None
-    end = datetime.strptime(date_range[1], '%Y-%m-%d') if date_range[1] else None
-    filtered = []
+    """Keep files whose filename date falls within the inclusive range."""
+    start = datetime.strptime(date_range[0], "%Y-%m-%d") if date_range[0] else None
+    end = datetime.strptime(date_range[1], "%Y-%m-%d") if date_range[1] else None
+    filtered_files = []
     for path, size in files:
-        match = re.search(r'\d{8}', Path(path).name)
+        match = re.search(r"\d{8}", Path(path).name)
         if not match:
             continue
-        obs_date = datetime.strptime(match.group(), '%Y%m%d')
-        if (start and obs_date < start) or (end and obs_date > end):
+        observation_date = datetime.strptime(match.group(), "%Y%m%d")
+        if (start is not None and observation_date < start) or (
+            end is not None and observation_date > end
+        ):
             continue
-        filtered.append((path, size))
+        filtered_files.append((path, size))
+    return filtered_files
+
+
+def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
+    """Mask invalid cells, their eight-cell coast buffer, and the Great Lakes."""
+    surface = dataset
+    if "time" in surface["adt"].dims:
+        surface = surface.isel(time=0)
+
+    valid = np.logical_and.reduce(
+        [np.isfinite(surface[field].to_numpy()) for field in SWOT_VALIDITY_FIELDS]
+    )
+    coast_ok = distance_transform_edt(valid) >= COAST_MIN_DISTANCE_PIXELS
+
+    longitude = surface["longitude"].to_numpy()
+    latitude = surface["latitude"].to_numpy()
+    in_great_lakes = (
+        (longitude[np.newaxis, :] >= GREAT_LAKES_LON_RANGE[0])
+        & (longitude[np.newaxis, :] <= GREAT_LAKES_LON_RANGE[1])
+        & (latitude[:, np.newaxis] >= GREAT_LAKES_LAT_RANGE[0])
+        & (latitude[:, np.newaxis] <= GREAT_LAKES_LAT_RANGE[1])
+    )
+    keep = xr.DataArray(
+        coast_ok & ~in_great_lakes,
+        coords={"latitude": surface["latitude"], "longitude": surface["longitude"]},
+        dims=("latitude", "longitude"),
+    )
+
+    filtered = dataset.copy()
+    for field in SWOT_VALIDITY_FIELDS:
+        filtered[field] = filtered[field].where(keep)
     return filtered
 
-def trim_file(raw_path: Path, out_path: Path) -> None:
-    """
-    Subset a global NetCDF to the configured lon/lat region.
 
-    Uses a temp file + atomic rename to prevent corrupt partial writes.
-    Deletes raw_path after a successful write.
-    """
-    tmp_path = out_path.with_suffix(".tmp.nc")
-    with xr.open_dataset(raw_path) as ds:
-        trimmed = ds.sel(
-            longitude=slice(*LON_RANGE),
-            latitude=slice(*LAT_RANGE),
-        )
-        trimmed.to_netcdf(tmp_path)
+def _trim_file(
+    raw_path: Path,
+    out_path: Path,
+    longitude_range: tuple[float, float],
+    latitude_range: tuple[float, float],
+    filter_open_ocean: bool,
+) -> None:
+    """Install a trimmed output through a temporary file, then delete the raw input."""
+    temporary_path = out_path.with_suffix(".tmp.nc")
+    try:
+        with xr.open_dataset(raw_path) as dataset:
+            trimmed = dataset.sel(
+                longitude=slice(*longitude_range),
+                latitude=slice(*latitude_range),
+            )
+            if filter_open_ocean:
+                trimmed = mask_open_ocean(trimmed)
+            trimmed.to_netcdf(temporary_path)
+        temporary_path.replace(out_path)
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
     raw_path.unlink()
-    tmp_path.rename(out_path)
 
 
-def download_one(remote_path: str) -> str:
-    """
-    Download a single file from FTP, trim to region, and save.
+def _download_one(remote_path: str, settings: DownloadSettings) -> str:
+    """Download and trim one file, or report that its output already exists."""
+    filename = Path(remote_path).name
+    local_path = settings.local_dir / filename
 
-    Downloads to a temp file first, then trims. Skips if already exists.
-    """
-    fn = Path(remote_path).name
-    local_fp = LOCAL_DIR / fn
+    if local_path.exists():
+        return f"[skip] {filename}"
 
-    if local_fp.exists():
-        return f"[skip] {fn}"
-
-    # Download full-globe file to a temp location, then trim
     with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
     try:
-        with FTP(HOST, USER, PASSWORD) as ftp:
-            ftp.cwd(REMOTE_DIR)
-            with open(tmp_path, 'wb') as f:
-                ftp.retrbinary(f"RETR {fn}", f.write)
-        trim_file(tmp_path, local_fp)
-    except Exception as e:
+        with FTP(settings.host, settings.user, settings.password) as ftp:
+            ftp.cwd(settings.remote_dir)
+            with tmp_path.open("wb") as temp_file:
+                ftp.retrbinary(f"RETR {filename}", temp_file.write)
+        with _NETCDF_IO_LOCK:
+            _trim_file(
+                tmp_path,
+                local_path,
+                settings.longitude_range,
+                settings.latitude_range,
+                settings.filter_open_ocean,
+            )
+    except Exception as exc:
         tmp_path.unlink(missing_ok=True)
-        local_fp.unlink(missing_ok=True)
-        return f"[ERROR] {fn}: {e}"
+        return f"[ERROR] {filename}: {exc}"
 
-    return f"[done] {fn}"
+    return f"[done] {filename}"
 
-def main():
-    LOCAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Perform remote lookup
+def main(experiment: str | None = None) -> None:
+    """Download configured SWOT files in parallel and trim them to the region."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+    settings = _load_settings(experiment)
+
     print("Listing remote files...")
-    files = list_remote_files_with_sizes()
-    files.sort(key=lambda x: Path(x[0]).name)
-    print(f"Found {len(files)} files on server")
+    remote_files = _list_remote_files_with_sizes(settings)
+    remote_files.sort(key=lambda item: Path(item[0]).name)
+    print(f"Found {len(remote_files)} files on server")
 
-    # Filter by date range
-    files = filter_by_date_range(files, DATE_RANGE)
-    print(f"Filtered to {len(files)} files in date range {DATE_RANGE}")
+    selected_files = filter_by_date_range(remote_files, settings.date_range)
+    print(
+        f"Filtered to {len(selected_files)} files in date range "
+        f"{settings.date_range}"
+    )
 
-    to_download = [path for path, _ in files]
-    total = sum(size for _, size in files if size is not None)
-    print(f"Total download size: {(total / 1024**3):.2f} GB")
-    print(f"Downloading {len(to_download)} files")
+    paths_to_download = [path for path, _ in selected_files]
+    total_bytes = sum(size for _, size in selected_files if size is not None)
+    print(f"Total download size: {(total_bytes / 1024**3):.2f} GB")
+    print(f"Downloading {len(paths_to_download)} files")
 
     failures = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_file = {executor.submit(download_one, f): f for f in to_download}
-        for future in as_completed(future_to_file):
+    with ThreadPoolExecutor(max_workers=settings.max_workers) as executor:
+        futures = [
+            executor.submit(_download_one, path, settings)
+            for path in paths_to_download
+        ]
+        for future in as_completed(futures):
             result = future.result()
             print(result)
             if result.startswith("[ERROR]"):
@@ -144,9 +231,10 @@ def main():
 
     if failures:
         print(f"\n{len(failures)} files failed:")
-        for msg in failures:
-            print(f"  {msg}")
-        sys.exit(1)
+        for message in failures:
+            print(f"  {message}")
+        raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()

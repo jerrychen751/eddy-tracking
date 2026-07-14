@@ -5,10 +5,8 @@ log-ratio targets.
 For each PACE composite, background pixels are open-water pixels that are
 both calm (|normalized relative vorticity| < BG_THRESHOLD_ROSSBY, from the
 matching SWOT day) and outside every tracked eddy contour active during the
-window, excluding the Great Lakes and any pixel within the coastal buffer
-load_rossby_field applies. Their Rrs spectra run through the same SDP model
-as the eddy pixels, and the per-pigment mean over those pixels is the
-background for that date.
+window. Their Rrs spectra run through the same SDP model as the eddy pixels,
+and the per-pigment mean over those pixels is the background for that date.
 
 Writes silver/pigments/background/bg_mean.parquet: one row per composite date with
 columns date, bg_mean_<pigment> (13), and n_bg_pixels.
@@ -27,7 +25,7 @@ from matplotlib.path import Path as MplPath
 from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
-from utils.subset import build_exclusion_mask, load_rossby_field
+from utils.subset import load_rossby_field
 from utils.sdp import run_sdp
 from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
 from utils.sdp.preprocessing import preprocess_rrs_batch
@@ -39,10 +37,6 @@ PET_EPOCH = dt.date(1950, 1, 1)
 BG_THRESHOLD_ROSSBY = 0.1
 # Search this many days on either side of a composite's midpoint for a SWOT day.
 SWOT_SEARCH_DAYS = 4
-# Corner of the region box that overlaps Lake Erie/Ontario; SWOT has no real
-# data there but leaks finite "calm" values on some dates.
-GREAT_LAKES_LON_RANGE = (-81, -75)
-GREAT_LAKES_LAT_RANGE = (40, 44)
 PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
 PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\.")
 SWOT_DATE_RE = re.compile(r"\d{8}")
@@ -61,7 +55,8 @@ def resolve_background_dir(experiment: str):
     return resolve_output_dir(experiment, "pigments", "background")
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
+    """Parse background-stage CLI arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("experiment")
     parser.add_argument(
@@ -146,9 +141,8 @@ def compute_calm_mask_on_pace(swot_fp, pace_lon: np.ndarray, pace_lat: np.ndarra
     Boolean (lat, lon) PACE-grid mask of calm water for one SWOT day.
 
     Interpolates |Ro| from the coarser SWOT grid onto the PACE pixels and
-    thresholds it. Pixels outside SWOT coverage, or within load_rossby_field's
-    coastal buffer, interpolate to NaN and fail the comparison, so they are
-    treated as not-calm.
+    thresholds it. Pixels saved as NaN in the SWOT bronze file interpolate to
+    NaN and fail the comparison, so they are treated as not-calm.
     """
     swot_lon, swot_lat, rossby_number = load_rossby_field(swot_fp)
     abs_rossby_number = xr.DataArray(
@@ -207,7 +201,12 @@ def compute_background_means(df: pd.DataFrame, sst_da, sss_da) -> dict | None:
     return means
 
 
-def main(experiment: str | None = None, subsample: int = 2000, limit: int = 0):
+def main(
+    experiment: str | None = None,
+    subsample: int = 2000,
+    limit: int = 0,
+) -> None:
+    """Compute and write per-date background pigment means."""
     if experiment is None:
         args = parse_args()
         experiment = args.experiment
@@ -254,16 +253,12 @@ def main(experiment: str | None = None, subsample: int = 2000, limit: int = 0):
             wavelengths = ds.coords["wavelength"].values.astype(int)
             rrs = ds["Rrs"].values  # (lat, lon, wavelength)
 
-        lon2d, lat2d = np.meshgrid(pace_lon, pace_lat)
         calm = compute_calm_mask_on_pace(swot_fp, pace_lon, pace_lat)
-        not_great_lakes = build_exclusion_mask(
-            lon2d, lat2d, GREAT_LAKES_LON_RANGE, GREAT_LAKES_LAT_RANGE
-        )
         rrs_flat = rrs.reshape(-1, rrs.shape[-1])
         all_finite = np.all(np.isfinite(rrs_flat), axis=1)
 
-        # Candidate background pixels: calm, open ocean, and fully observed across all bands.
-        candidate = np.flatnonzero(calm.ravel() & not_great_lakes.ravel() & all_finite)
+        # Candidate background pixels: calm and fully observed across all bands.
+        candidate = np.flatnonzero(calm.ravel() & all_finite)
         if candidate.size == 0:
             print(f"{repr_date}: no calm/observed pixels, skipping")
             continue

@@ -1,19 +1,9 @@
-"""Spatial and temporal subsetting predicates, plus SWOT field loading, for
-stages that need to know whether a location is open ocean.
-
-Originally extracted from collocate_pace.py so the logic is unit-testable —
-that script parses CLI args at import time and cannot be imported directly.
-"""
+"""Spatial and temporal subsetting predicates plus SWOT field loading."""
 import datetime as dt
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
-from scipy.ndimage import distance_transform_edt
-
-# SWOT's grid is 0.125 deg/pixel, so 8 pixels is ~1 deg (~90-111 km depending
-# on direction at this project's latitudes).
-COAST_MIN_DISTANCE_PIXELS = 8
 
 
 def parse_date_range(date_range: list[str] | None) -> tuple[dt.date, dt.date] | None:
@@ -52,38 +42,12 @@ def in_subset(
     return True
 
 
-def build_exclusion_mask(
-    lon: np.ndarray,
-    lat: np.ndarray,
-    lon_range: tuple[float, float],
-    lat_range: tuple[float, float],
-) -> np.ndarray:
-    """True where (lon, lat) falls outside the box - i.e., where the point survives."""
-    inside = (lon >= lon_range[0]) & (lon <= lon_range[1]) & (lat >= lat_range[0]) & (lat <= lat_range[1])
-    return ~inside
-
-
-def swot_is_valid(ds: xr.Dataset) -> np.ndarray:
-    """True where adt, ugos, vgos, and relative_vorticity are all finite."""
-    return (
-        np.isfinite(ds["adt"].values)
-        & np.isfinite(ds["ugos"].values)
-        & np.isfinite(ds["vgos"].values)
-        & np.isfinite(ds["relative_vorticity"].values)
-    )
-
-
-def load_rossby_field(
-    swot_fp: Path, min_distance_pixels: int = COAST_MIN_DISTANCE_PIXELS
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return lon, lat, and Rossby number from one SWOT file, with pixels closer than min_distance_pixels to the nearest invalid cell (see swot_is_valid) set to NaN."""
-    with xr.open_dataset(swot_fp) as ds:
-        if "time" in ds["relative_vorticity"].dims:
-            ds = ds.isel(time=0)
-        lon = ds["longitude"].to_numpy()
-        lat = ds["latitude"].to_numpy()
-        coast_ok = distance_transform_edt(swot_is_valid(ds)) >= min_distance_pixels
-        # Source variable name is relative_vorticity, but these DUACS/MIOST
-        # values are already normalized by Coriolis: Ro = zeta / f.
-        rossby_number = np.where(coast_ok, ds["relative_vorticity"].to_numpy(), np.nan)
-    return lon, lat, rossby_number
+def load_rossby_field(swot_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return longitude, latitude, and the saved Rossby-number field."""
+    with xr.open_dataset(swot_path) as dataset:
+        if "time" in dataset["relative_vorticity"].dims:
+            dataset = dataset.isel(time=0)
+        longitude = dataset["longitude"].to_numpy()
+        latitude = dataset["latitude"].to_numpy()
+        rossby_number = dataset["relative_vorticity"].to_numpy()
+    return longitude, latitude, rossby_number
