@@ -21,29 +21,15 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from matplotlib.path import Path as MplPath
+
+from utils.config import (
+    METADATA_COLS,
+    load_config,
+    resolve_data_dir,
+    resolve_output_dir,
+)
 from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
-
-from utils.config import load_config, resolve_data_dir, resolve_output_dir, METADATA_COLS
-from utils.subset import parse_date_range, in_subset
-
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-args = parser.parse_args()
-
-cfg = load_config(args.experiment)
-
-PACE_DIR = resolve_data_dir(cfg, "pace_dir")
-MIN_COVERAGE = cfg["collocate_pace"]["min_coverage"]
-TRACK_IDS = cfg["collocate_pace"].get("track_ids")
-TEMPORAL_RES = cfg["collocate_pace"].get("temporal_resolution", "DAY")
-REGION = cfg["collocate_pace"].get("region")
-DATE_RANGE = parse_date_range(cfg["collocate_pace"].get("date_range"))
-
-CYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "cyclone")
-ANTICYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "anticyclone")
-
-OUT_CYCLONE_DIR = resolve_output_dir(args.experiment, "collocate_pace", "cyclone")
-OUT_ANTICYCLONE_DIR = resolve_output_dir(args.experiment, "collocate_pace", "anticyclone")
+from utils.subset import in_subset, parse_date_range
 
 PET_EPOCH = dt.date(1950, 1, 1)
 PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\.")
@@ -52,6 +38,7 @@ PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
 
 class EddyObs(NamedTuple):
     """Single eddy observation on one date: contour + center coordinates."""
+
     track_id: int
     polarity: str
     contour_lon: np.ndarray
@@ -69,51 +56,37 @@ def collocate_one_observation(
     min_coverage: float,
 ) -> dict[str, np.ndarray | float] | None:
     """
-    Extract QC-filtered Rrs pixels inside one eddy contour from one L3 grid.
+    Return valid Rrs pixels inside a contour when coverage meets the threshold.
 
-    Builds a polygon from the ~50 eddy contour points and tests which grid
-    cells fall inside using matplotlib's ray-casting algorithm. L3 QC is
-    pre-applied during NASA processing — flagged pixels are NaN.
-
-    Args:
-        lon: 1D longitude coordinates from the L3 grid (600,).
-        lat: 1D latitude coordinates from the L3 grid (360,).
-        rrs: Remote-sensing reflectance array (lat, lon, wavelength) —
-            (360, 600, 172) for PACE OCI's 172 hyperspectral bands.
-        contour_lon: Eddy contour longitudes (~50 vertices).
-        contour_lat: Eddy contour latitudes (~50 vertices).
-        min_coverage: Fraction of in-contour grid cells that must have
-            valid (non-NaN) Rrs to keep this eddy-date instance.
-
-    Returns a mapping with valid pixels and coverage on success, otherwise
-    None if the eddy has no overlapping grid cells or insufficient valid
-    coverage.
+    NASA L3 quality flags are already represented as NaN values in ``rrs``.
     """
-    lon2d, lat2d = np.meshgrid(lon, lat)
-    n_gridcells = lon2d.size # lon * lat
-    lon_flat = lon2d.ravel() # lon^2
-    lat_flat = lat2d.ravel() # lat^2
-    rrs_flat = rrs.reshape(n_gridcells, -1) # (lon*lat, 172)
+    longitude_grid, latitude_grid = np.meshgrid(lon, lat)
+    n_grid_cells = longitude_grid.size
+    grid_longitudes = longitude_grid.ravel()
+    grid_latitudes = latitude_grid.ravel()
+    flattened_rrs = rrs.reshape(n_grid_cells, -1)
 
     polygon = MplPath(np.column_stack([contour_lon, contour_lat]))
-    inside = polygon.contains_points(np.column_stack([lon_flat, lat_flat]))
+    inside_contour = polygon.contains_points(
+        np.column_stack([grid_longitudes, grid_latitudes])
+    )
 
-    all_finite = np.all(np.isfinite(rrs_flat), axis=1)
-    valid = inside & all_finite
+    finite_spectra = np.all(np.isfinite(flattened_rrs), axis=1)
+    valid_pixels = inside_contour & finite_spectra
 
-    n_inside = int(np.sum(inside))
+    n_inside = int(np.sum(inside_contour))
     if n_inside == 0:
         return None
 
-    n_valid = int(np.sum(valid))
+    n_valid = int(np.sum(valid_pixels))
     coverage = float(n_valid) / n_inside
     if coverage < min_coverage:
         return None
 
     return {
-        "rrs": rrs_flat[valid],
-        "lon": lon_flat[valid],
-        "lat": lat_flat[valid],
+        "rrs": flattened_rrs[valid_pixels],
+        "lon": grid_longitudes[valid_pixels],
+        "lat": grid_latitudes[valid_pixels],
         "coverage": coverage,
     }
 
@@ -126,23 +99,18 @@ def build_date_eddy_index(
     date_range: tuple[dt.date, dt.date] | None = None,
 ) -> dict[dt.date, list[EddyObs]]:
     """
-    Build an inverted index mapping date → list of EddyObs.
+    Index detected observations by date, excluding interpolated track gaps.
 
-    Scans all non-virtual observations in the tracks zarr. Virtual
-    observations (gap-filled by interpolation during tracking) are skipped
-    because their contours are estimated, not detected.
-
-    Contour longitudes are converted from PET's 0–360 convention to
-    PACE L3's -180/180.
+    Contour longitudes are converted from PET's 0 to 360 convention to -180 to 180.
     """
-    index: dict[dt.date, list[EddyObs]] = defaultdict(list)
+    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
 
-    unique_ids = np.unique(tracked.track)
-    for tid in unique_ids:
-        if track_ids is not None and tid not in track_ids:
+    unique_track_ids = np.unique(tracked.track)
+    for track_id in unique_track_ids:
+        if track_ids is not None and track_id not in track_ids:
             continue
 
-        mask = tracked.track == tid
+        mask = tracked.track == track_id
         times = tracked.time[mask]
         virtuals = tracked.virtual[mask]
         contour_lons = tracked.contour_lon_s[mask]
@@ -150,44 +118,44 @@ def build_date_eddy_index(
         center_lons = tracked.longitude[mask]
         center_lats = tracked.latitude[mask]
 
-        for j in range(len(times)):
-            if virtuals[j]:
+        for obs_idx in range(len(times)):
+            if virtuals[obs_idx]:
                 continue
 
-            day = PET_EPOCH + dt.timedelta(days=int(times[j]))
-            center_lon = float((center_lons[j] + 180) % 360 - 180)
-            center_lat = float(center_lats[j])
+            day = PET_EPOCH + dt.timedelta(days=int(times[obs_idx]))
+            center_lon = float((center_lons[obs_idx] + 180) % 360 - 180)
+            center_lat = float(center_lats[obs_idx])
             if not in_subset(center_lon, center_lat, day, region, date_range):
                 continue
 
             obs = EddyObs(
-                track_id=int(tid),
+                track_id=int(track_id),
                 polarity=polarity,
-                contour_lon=(contour_lons[j] + 180) % 360 - 180,
-                contour_lat=contour_lats[j],
+                contour_lon=(contour_lons[obs_idx] + 180) % 360 - 180,
+                contour_lat=contour_lats[obs_idx],
                 center_lon=center_lon,
                 center_lat=center_lat,
             )
-            index[day].append(obs)
+            date_index[day].append(obs)
 
-    return index
+    return date_index
 
 
 def parse_pace_date(filename: str) -> dt.date | None:
     """Extract date from a daily PACE L3 filename."""
-    m = PACE_DAILY_RE.search(filename)
-    if m is None:
+    match = PACE_DAILY_RE.search(filename)
+    if match is None:
         return None
-    return dt.datetime.strptime(m.group(1), "%Y%m%d").date()
+    return dt.datetime.strptime(match.group(1), "%Y%m%d").date()
 
 
 def parse_pace_date_range(filename: str) -> tuple[dt.date, dt.date] | tuple[None, None]:
     """Extract start/end dates from an 8-day composite filename."""
-    m = PACE_8DAY_RE.search(filename)
-    if m is None:
+    match = PACE_8DAY_RE.search(filename)
+    if match is None:
         return None, None
-    start = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
-    end = dt.datetime.strptime(m.group(2), "%Y%m%d").date()
+    start = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
+    end = dt.datetime.strptime(match.group(2), "%Y%m%d").date()
     return start, end
 
 
@@ -196,40 +164,54 @@ def collect_eddies_for_window(
     start: dt.date,
     end: dt.date,
 ) -> list["EddyObs"]:
-    """
-    Collect one EddyObs per (track_id, polarity) for an 8-day window.
-
-    An eddy may be detected on multiple days within the window. We keep
-    the observation whose date is closest to the window midpoint, since
-    the composite Rrs is a temporal average and the midpoint contour
-    best represents the eddy's position during the observation.
-    """
+    """Select each eddy's observation nearest an 8-day window midpoint."""
     midpoint = start + (end - start) / 2
-    # (track_id, polarity) → (obs, distance_to_midpoint)
     best: dict[tuple[int, str], tuple[EddyObs, float]] = {}
 
     day = start
     while day <= end:
         for obs in date_index.get(day, []):
             key = (obs.track_id, obs.polarity)
-            dist = abs((day - midpoint).days)
-            if key not in best or dist < best[key][1]:
-                best[key] = (obs, dist)
+            midpoint_dist = abs((day - midpoint).days)
+            if key not in best or midpoint_dist < best[key][1]:
+                best[key] = (obs, midpoint_dist)
         day += dt.timedelta(days=1)
 
     return [obs for obs, _ in best.values()]
 
 
-def main():
-    track_ids_set = set(TRACK_IDS) if TRACK_IDS else None
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
 
-    # Load tracks and build combined date index across both polarities
+
+def main(experiment: str | None = None) -> None:
+    """Collocate PACE observations and write one Parquet file per tracked eddy."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+
+    cfg = load_config(experiment)
+    collocation_cfg = cfg["collocate_pace"]
+    pace_dir = resolve_data_dir(cfg, "pace_dir")
+    min_coverage = collocation_cfg["min_coverage"]
+    configured_track_ids = collocation_cfg.get("track_ids")
+    track_ids = set(configured_track_ids) if configured_track_ids else None
+    temporal_resolution = collocation_cfg.get("temporal_resolution", "DAY")
+    region = collocation_cfg.get("region")
+    date_range = parse_date_range(collocation_cfg.get("date_range"))
+    track_dirs = {
+        polarity: resolve_output_dir(experiment, "eddy_track", polarity)
+        for polarity in ("cyclone", "anticyclone")
+    }
+    output_dirs = {
+        polarity: resolve_output_dir(experiment, "collocate_pace", polarity)
+        for polarity in ("cyclone", "anticyclone")
+    }
+
     date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
 
-    for polarity, track_dir in [
-        ("cyclone", CYCLONE_TRACK_DIR),
-        ("anticyclone", ANTICYCLONE_TRACK_DIR),
-    ]:
+    for polarity, track_dir in track_dirs.items():
         zarr_path = track_dir / f"{track_dir.name}_tracks.zarr"
         if not zarr_path.exists():
             print(f"[{polarity}] No tracks zarr at {zarr_path}, skipping")
@@ -238,117 +220,134 @@ def main():
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
         n_tracks = len(np.unique(tracked.track))
 
-        pol_index = build_date_eddy_index(
-            tracked, polarity, track_ids_set, REGION, DATE_RANGE
+        polarity_date_index = build_date_eddy_index(
+            tracked, polarity, track_ids, region, date_range
         )
-        for day, obs_list in pol_index.items():
-            date_index[day].extend(obs_list)
+        for day, observations in polarity_date_index.items():
+            date_index[day].extend(observations)
 
-        n_obs = sum(len(v) for v in pol_index.values())
-        n_indexed = len({
-            obs.track_id for obs_list in pol_index.values() for obs in obs_list
-        })
-        print(f"[{polarity}] {n_indexed}/{n_tracks} tracks, {n_obs} observations indexed")
+        n_observations = sum(
+            len(observations) for observations in polarity_date_index.values()
+        )
+        n_indexed_tracks = len(
+            {
+                observation.track_id
+                for observations in polarity_date_index.values()
+                for observation in observations
+            }
+        )
+        print(
+            f"[{polarity}] {n_indexed_tracks}/{n_tracks} tracks, "
+            f"{n_observations} observations indexed"
+        )
 
     if not date_index:
         print("No eddy observations found. Nothing to do.")
         return
 
-    # Discover PACE files and read wavelength grid from the first one
-    pace_files = sorted(PACE_DIR.glob("*.nc"))
+    pace_files = sorted(pace_dir.glob("*.nc"))
     if not pace_files:
-        print(f"No PACE files found in {PACE_DIR}")
+        print(f"No PACE files found in {pace_dir}")
         return
 
     print(f"{len(pace_files)} PACE files, {len(date_index)} unique eddy-dates")
 
     with xr.open_dataset(pace_files[0]) as sample:
         wavelengths = sample.coords["wavelength"].values.astype(int)
-    rrs_cols = [f"Rrs_{w}" for w in wavelengths]
+    rrs_columns = [f"Rrs_{wavelength}" for wavelength in wavelengths]
 
-    # Per-eddy accumulator: (track_id, polarity) → list of row arrays
-    accum: dict[tuple[int, str], list[np.ndarray]] = defaultdict(list)
-    n_matched = 0
+    rows_by_eddy: dict[tuple[int, str], list[np.ndarray]] = defaultdict(list)
+    n_matched_files = 0
 
-    for fp in pace_files:
-        # Parse date(s) from filename based on temporal resolution
-        if TEMPORAL_RES == "8D":
-            win_start, win_end = parse_pace_date_range(fp.name)
-            if win_start is None:
+    for pace_path in pace_files:
+        if temporal_resolution == "8D":
+            window_start, window_end = parse_pace_date_range(pace_path.name)
+            if window_start is None:
                 continue
-            eddies_matched = collect_eddies_for_window(date_index, win_start, win_end)
-            # Use window midpoint as the representative date for output
-            repr_date = win_start + (win_end - win_start) / 2
-            date_label = f"{win_start}..{win_end}"
+            matched_eddies = collect_eddies_for_window(
+                date_index, window_start, window_end
+            )
+            representative_date = window_start + (window_end - window_start) / 2
+            date_label = f"{window_start}..{window_end}"
         else:
-            repr_date = parse_pace_date(fp.name)
-            if repr_date is None:
+            representative_date = parse_pace_date(pace_path.name)
+            if representative_date is None:
                 continue
-            eddies_matched = date_index.get(repr_date, [])
-            date_label = str(repr_date)
+            matched_eddies = date_index.get(representative_date, [])
+            date_label = str(representative_date)
 
-        if not eddies_matched:
+        if not matched_eddies:
             continue
 
-        n_matched += 1
+        n_matched_files += 1
 
         try:
-            with xr.open_dataset(fp) as ds:
-                lon = ds["lon"].values
-                lat = ds["lat"].values
-                rrs = ds["Rrs"].values
-        except OSError as e:
-            print(f"Skipping {fp.name}: {e}")
+            with xr.open_dataset(pace_path) as dataset:
+                longitudes = dataset["lon"].values
+                latitudes = dataset["lat"].values
+                rrs = dataset["Rrs"].values
+        except OSError as exc:
+            print(f"Skipping {pace_path.name}: {exc}")
             continue
 
-        for eddy in eddies_matched:
+        for eddy in matched_eddies:
             result = collocate_one_observation(
-                lon, lat, rrs,
-                eddy.contour_lon, eddy.contour_lat,
-                min_coverage=MIN_COVERAGE,
+                longitudes,
+                latitudes,
+                rrs,
+                eddy.contour_lon,
+                eddy.contour_lat,
+                min_coverage=min_coverage,
             )
             if result is None:
                 continue
 
-            n_pix = len(result["lon"])
-            pet_day = (repr_date - PET_EPOCH).days
-            chunk = np.column_stack([
-                np.full(n_pix, eddy.track_id),
-                np.full(n_pix, pet_day),
-                result["lon"],
-                result["lat"],
-                np.full(n_pix, eddy.center_lon),
-                np.full(n_pix, eddy.center_lat),
-                np.full(n_pix, result["coverage"]),
-                result["rrs"],
-            ])
-            accum[(eddy.track_id, eddy.polarity)].append(chunk)
+            n_pixels = len(result["lon"])
+            days_since_pet_epoch = (representative_date - PET_EPOCH).days
+            rows = np.column_stack(
+                [
+                    np.full(n_pixels, eddy.track_id),
+                    np.full(n_pixels, days_since_pet_epoch),
+                    result["lon"],
+                    result["lat"],
+                    np.full(n_pixels, eddy.center_lon),
+                    np.full(n_pixels, eddy.center_lat),
+                    np.full(n_pixels, result["coverage"]),
+                    result["rrs"],
+                ]
+            )
+            rows_by_eddy[(eddy.track_id, eddy.polarity)].append(rows)
 
             print(
                 f"{date_label} | {eddy.polarity} #{eddy.track_id}: "
-                f"{n_pix} pixels, coverage={result['coverage']:.2f}"
+                f"{n_pixels} pixels, coverage={result['coverage']:.2f}"
             )
 
-    print(f"Matched {n_matched}/{len(pace_files)} PACE files to eddy dates")
+    print(
+        f"Matched {n_matched_files}/{len(pace_files)} PACE files to eddy dates"
+    )
 
-    columns = METADATA_COLS + rrs_cols
+    columns = METADATA_COLS + rrs_columns
 
     n_written = 0
-    for (track_id, polarity), chunks in sorted(accum.items()):
-        all_data = np.vstack(chunks)
-        df = pd.DataFrame(all_data, columns=columns)
-        df["track_id"] = df["track_id"].astype(int)
-        df["date"] = (
-            pd.Timestamp("1950-01-01") + pd.to_timedelta(df["date"], unit="D")
+    for (track_id, polarity), row_chunks in sorted(rows_by_eddy.items()):
+        observations = pd.DataFrame(np.vstack(row_chunks), columns=columns)
+        observations["track_id"] = observations["track_id"].astype(int)
+        observations["date"] = (
+            pd.Timestamp("1950-01-01")
+            + pd.to_timedelta(observations["date"], unit="D")
         )
 
-        out_dir = OUT_CYCLONE_DIR if polarity == "cyclone" else OUT_ANTICYCLONE_DIR
+        out_dir = output_dirs[polarity]
         out_path = out_dir / f"eddy_{track_id}_rrs.parquet"
-        df.to_parquet(out_path, index=False)
+        observations.to_parquet(out_path, index=False)
         n_written += 1
 
-        n_dates = df["date"].nunique()
-        print(f"Wrote {out_path.name}: {len(df)} pixels across {n_dates} dates")
+        n_dates = observations["date"].nunique()
+        print(
+            f"Wrote {out_path.name}: {len(observations)} pixels across "
+            f"{n_dates} dates"
+        )
 
     print(f"Done. {n_written} eddy files written.")
 

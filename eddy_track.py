@@ -2,35 +2,16 @@
 Track eddies across daily identification files using PET Correspondances.
 
 Builds frame-to-frame eddy correspondences from the daily .nc files produced
-by eddy_id.py, filters to tracks longer than MIN_TRACK_DAYS, interpolates
-virtual observations, smooths positions, and writes merged tracks to a Zarr
-file.
+by eddy_id.py, applies the configured minimum track duration, interpolates
+virtual observations, smooths positions, and writes merged tracks to Zarr.
 """
 
 import argparse
 import shutil
 from pathlib import Path
 
+from utils.config import load_config, resolve_output_dir
 from utils.py_eddy_tracker.tracking import Correspondances
-
-from utils.config import resolve_output_dir, load_config
-
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-args = parser.parse_args()
-
-cfg = load_config(args.experiment)
-
-ANTICYCLONE_ID_DIR = resolve_output_dir(args.experiment, "eddy_id", "anticyclone")
-CYCLONE_ID_DIR = resolve_output_dir(args.experiment, "eddy_id", "cyclone")
-
-ANTICYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "anticyclone")
-CYCLONE_TRACK_DIR = resolve_output_dir(args.experiment, "eddy_track", "cyclone")
-
-VIRTUAL = cfg["eddy_track"]["virtual"]
-MIN_TRACK_DAYS = cfg["eddy_track"]["min_track_days"]
-MEDIAN_HALF_WINDOW = cfg["eddy_track"]["position_filter"]["median_half_window"]
-LOESS_HALF_WINDOW = cfg["eddy_track"]["position_filter"]["loess_half_window"]
 
 
 def _remove_path(path: Path) -> None:
@@ -41,59 +22,84 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
-def track(id_dir: Path, track_dir: Path) -> None:
-    """
-    Run PET tracking on all daily eddy ID files in id_dir, write result to track_dir.
-
-    Steps: build correspondences across consecutive days, filter to tracks
-    longer than MIN_TRACK_DAYS, interpolate virtual observations, and write
-    merged tracks to a Zarr file.
-    """
-    name = track_dir.name
-    files = sorted(id_dir.glob("*.nc"))
-    if not files:
-        print(f"[{name}] No .nc files found in {id_dir}, skipping")
+def track(
+    id_dir: Path,
+    track_dir: Path,
+    *,
+    virtual: int,
+    min_track_days: int,
+    median_half_window: int,
+    loess_half_window: int,
+) -> None:
+    """Track daily eddy IDs and replace the output after a temporary write."""
+    polarity = track_dir.name
+    identification_files = sorted(id_dir.glob("*.nc"))
+    if not identification_files:
+        print(f"[{polarity}] No .nc files found in {id_dir}, skipping")
         return
 
-    print(f"[{name}] Tracking {len(files)} daily files...")
+    print(f"[{polarity}] Tracking {len(identification_files)} daily files...")
 
-    corr = Correspondances(
-        datasets=files,
-        virtual=VIRTUAL,
+    correspondences = Correspondances(
+        datasets=identification_files,
+        virtual=virtual,
     )
-    corr.track()
+    correspondences.track()
 
-    corr.prepare_merging()
-    corr.longer_than(MIN_TRACK_DAYS)
-    tracked = corr.merge(raw_data=False)
+    correspondences.prepare_merging()
+    correspondences.longer_than(min_track_days)
+    tracked_observations = correspondences.merge(raw_data=False)
 
-    # Interpolate virtual observations (timesteps where the eddy existed
-    # but wasn't detected). PET marks these with time == 0.
-    virtual_mask = tracked.time == 0
-    tracked.virtual[:] = virtual_mask
-    tracked.filled_by_interpolation(tracked.virtual == 1)
-
-    tracked.position_filter(
-        median_half_window=MEDIAN_HALF_WINDOW,
-        loess_half_window=LOESS_HALF_WINDOW,
+    # PET marks missing detections with time == 0 before interpolation.
+    virtual_mask = tracked_observations.time == 0
+    tracked_observations.virtual[:] = virtual_mask
+    tracked_observations.filled_by_interpolation(
+        tracked_observations.virtual == 1
     )
 
-    out_path = track_dir / f"{name}_tracks.zarr"
-    tmp_path = track_dir / f"{name}_tracks.tmp.zarr"
-    _remove_path(tmp_path)
-    tracked.write_file(filename=str(tmp_path))
-    # Only remove the old zarr after the new one is fully written
-    _remove_path(out_path)
-    tmp_path.rename(out_path)
-    print(f"[{name}] Wrote {out_path}")
+    tracked_observations.position_filter(
+        median_half_window=median_half_window,
+        loess_half_window=loess_half_window,
+    )
+
+    output_path = track_dir / f"{polarity}_tracks.zarr"
+    temporary_path = track_dir / f"{polarity}_tracks.tmp.zarr"
+    _remove_path(temporary_path)
+    tracked_observations.write_file(filename=str(temporary_path))
+    # Preserve the current output until its replacement is fully written.
+    _remove_path(output_path)
+    temporary_path.rename(output_path)
+    print(f"[{polarity}] Wrote {output_path}")
 
 
-def main():
-    ANTICYCLONE_TRACK_DIR.mkdir(parents=True, exist_ok=True)
-    CYCLONE_TRACK_DIR.mkdir(parents=True, exist_ok=True)
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
 
-    track(ANTICYCLONE_ID_DIR, ANTICYCLONE_TRACK_DIR)
-    track(CYCLONE_ID_DIR, CYCLONE_TRACK_DIR)
+
+def main(experiment: str | None = None) -> None:
+    """Track both polarities for an experiment and write their Zarr datasets."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+
+    cfg = load_config(experiment)
+    tracking_cfg = cfg["eddy_track"]
+    filter_cfg = tracking_cfg["position_filter"]
+
+    for polarity in ("anticyclone", "cyclone"):
+        id_dir = resolve_output_dir(experiment, "eddy_id", polarity)
+        track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
+        track_dir.mkdir(parents=True, exist_ok=True)
+
+        track(
+            id_dir,
+            track_dir,
+            virtual=tracking_cfg["virtual"],
+            min_track_days=tracking_cfg["min_track_days"],
+            median_half_window=filter_cfg["median_half_window"],
+            loess_half_window=filter_cfg["loess_half_window"],
+        )
 
 
 if __name__ == "__main__":

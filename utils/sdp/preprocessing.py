@@ -74,7 +74,7 @@ def preprocess_rrs_spectrum(
         final_range_nm: (min, max) wavelength range for the output.
 
     Returns:
-        (out_wavelengths, out_rrs) — both 1D arrays of length (final_max - final_min) / interp_nm + 1 (default: 301).
+        (out_wavelengths, out_rrs) - both 1D arrays of length (final_max - final_min) / interp_nm + 1 (default: 301).
     """
     wl = np.asarray(wavelengths_nm, dtype=float)
     y = np.asarray(rrs, dtype=float)

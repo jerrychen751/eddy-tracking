@@ -2,7 +2,7 @@
 Simulated annealing F matrix optimization. Ports phytoclass::simulated_annealing.
 
 Matches the R implementation modulo RNG differences (R's Mersenne Twister vs
-numpy's PCG64) — the algorithm is byte-for-byte equivalent, but trajectories
+numpy's PCG64) - the algorithm is byte-for-byte equivalent, but trajectories
 differ because the random draws differ.
 """
 
@@ -63,7 +63,7 @@ def simulated_annealing(
     Args:
         S: sample matrix (n_samples, n_pigments), Tchla MUST be the last column.
            DataFrame or ndarray. Row-normalization is applied inside this
-           function — pass raw concentrations.
+           function - pass raw concentrations.
         Fmat: pigment-to-Tchla ratio matrix (n_classes, n_pigments) with the
             same column order as S and row labels for phytoplankton classes.
             DataFrame preferred so class and pigment names are preserved.
@@ -100,7 +100,7 @@ def simulated_annealing(
 
     if Fmat.shape[1] != S.shape[1]:
         raise ValueError(
-            f"F matrix has {Fmat.shape[1]} columns but S has {S.shape[1]} — "
+            f"F matrix has {Fmat.shape[1]} columns but S has {S.shape[1]} - "
             "column counts must match and Tchla must be the last column in both."
         )
 

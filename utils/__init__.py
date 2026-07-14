@@ -1,15 +1,21 @@
+"""Public configuration helpers for the eddy-tracking pipeline."""
+
 from utils.config import (
-    PROJECT_ROOT,
     METADATA_COLS,
+    PROJECT_ROOT,
     load_config,
+    resolve_config_file,
     resolve_data_dir,
+    resolve_gold_dir,
     resolve_output_dir,
 )
 
 __all__ = [
-    "PROJECT_ROOT",
     "METADATA_COLS",
+    "PROJECT_ROOT",
     "load_config",
+    "resolve_config_file",
     "resolve_data_dir",
+    "resolve_gold_dir",
     "resolve_output_dir",
 ]

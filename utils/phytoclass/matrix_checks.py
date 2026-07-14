@@ -7,7 +7,6 @@ stripped from S. Should be called before simulated_annealing when using
 standard class/pigment names.
 """
 
-import numpy as np
 import pandas as pd
 
 
@@ -46,7 +45,7 @@ def matrix_checks(
         7. After the group drop, drop any F columns that became all-zero.
 
     Returns:
-        (S_new, F_new) — new DataFrames with matched columns.
+        (S_new, F_new) - new DataFrames with matched columns.
     """
     if not isinstance(S, pd.DataFrame):
         raise TypeError("Matrix_checks expects DataFrames so column names drive the filter.")

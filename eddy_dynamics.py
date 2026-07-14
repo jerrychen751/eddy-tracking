@@ -39,10 +39,12 @@ DYNAMICS_COLUMNS = [
 
 
 def parse_file_date(fp: Path) -> dt.date:
+    """Parse the first YYYYMMDD token in a SWOT filename."""
     return dt.datetime.strptime(SWOT_DATE_RE.search(fp.name).group(), "%Y%m%d").date()
 
 
 def index_swot_files_by_date(swot_dir: Path) -> dict[dt.date, Path]:
+    """Index local SWOT NetCDF files by observation date."""
     return {parse_file_date(fp): fp for fp in sorted(swot_dir.glob("*.nc"))}
 
 
@@ -73,6 +75,7 @@ def track_observations_to_frame(tracked, polarity: str) -> pd.DataFrame:
 
 
 def load_track_observations(experiment: str) -> pd.DataFrame:
+    """Load non-virtual track observations for both polarities."""
     from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
     frames = []
@@ -123,6 +126,7 @@ def compute_rossby_stats(
 
 
 def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.DataFrame:
+    """Compute Rossby diagnostics for each eddy observation with SWOT coverage."""
     rows = []
     for date, grp in obs.groupby("date"):
         swot_fp = find_nearest_swot_file(swot_files, pd.Timestamp(date).date())
@@ -151,6 +155,7 @@ def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.Dat
 
 
 def write_dynamics(experiment: str, dynamics: pd.DataFrame) -> None:
+    """Write one dynamics Parquet file per polarity."""
     for polarity in ("cyclone", "anticyclone"):
         out_dir = resolve_output_dir(experiment, "eddy_dynamics", polarity)
         out = dynamics[dynamics["polarity"] == polarity].copy()
@@ -158,7 +163,8 @@ def write_dynamics(experiment: str, dynamics: pd.DataFrame) -> None:
         print(f"Wrote {out_dir / 'dynamics.parquet'}  ({len(out)} rows)")
 
 
-def main(experiment: str | None = None):
+def main(experiment: str | None = None) -> None:
+    """Compute and write Rossby diagnostics for one experiment."""
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")

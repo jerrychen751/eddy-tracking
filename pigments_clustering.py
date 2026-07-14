@@ -3,7 +3,7 @@ Hierarchical clustering of diagnostic pigments from SDP output.
 
 Follows Kramer & Siegel (2019): compute pigment:TChla ratios, take the pairwise
 Pearson correlation matrix, convert to 1 - r distance, and run Ward's linkage.
-Produces a dendrogram, linkage matrix, and flat cluster assignments — intended
+Produces a dendrogram, linkage matrix, and flat cluster assignments - intended
 to validate which PFT biomarkers co-vary in the dataset, informing F-matrix
 pruning or merging for PhytoClass.
 
@@ -92,6 +92,7 @@ def iter_eddy_files(experiment: str) -> Iterator[tuple[Path, pd.DataFrame]]:
 
 
 def get_pigment_cols(df: pd.DataFrame) -> list[str]:
+    """Return modeled pigment columns, excluding metadata and total Chla."""
     return [c for c in df.columns if c not in METADATA_COLS and c not in EXCLUDE_COLS]
 
 
@@ -109,7 +110,7 @@ def compute_pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
     """
     frames = [df for _, df in iter_eddy_files(experiment)]
     if not frames:
-        raise RuntimeError("No pigment files found — did run_sdp.py finish?")
+        raise RuntimeError("No pigment files found - did run_sdp.py finish?")
     df = pd.concat(frames, ignore_index=True)
     print(f"Pooled observations: {len(df)}")
 
@@ -183,6 +184,7 @@ def save_dendrogram(
     color_threshold: float,
     title: str,
 ) -> None:
+    """Render and save a pigment dendrogram with PFT cluster labels."""
     labels = [DISPLAY_NAMES.get(p, p) for p in pigment_names]
     fig, ax = plt.subplots(figsize=(10, 5.5), dpi=300)
     dendrogram(Z, labels=labels, ax=ax, leaf_rotation=45, leaf_font_size=9,
@@ -230,6 +232,7 @@ def save_cluster_table(
     threshold: float,
     out_path: Path,
 ) -> None:
+    """Write pigment cluster assignments and print their PFT groupings."""
     assignments = fcluster(Z, t=threshold, criterion="distance")
 
     # Per-pigment table (with literature PFT)
@@ -261,6 +264,7 @@ def save_cluster_table(
 
 
 def main() -> None:
+    """Cluster experiment pigments and write the selected analysis artifacts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("experiment", help="experiment name under configs/")
     parser.add_argument("--threshold", type=float, default=0.65,

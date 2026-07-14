@@ -39,6 +39,7 @@ KM_PER_DEG_LAT = 111.0
 
 
 def parse_file_date(fp: Path) -> dt.date:
+    """Parse the first YYYYMMDD token in a SWOT filename."""
     return dt.datetime.strptime(re.search(r"\d{8}", fp.name).group(), "%Y%m%d").date()
 
 
@@ -89,8 +90,12 @@ class GulfStreamCenterline:
         seed_score = np.where(finite_in_box >= box - 0.5, local_mean, -np.inf)
         if seed_score.max() <= 0:
             return cls(np.array([]), np.array([]))
-        origin_i, origin_j = np.unravel_index(np.argmax(seed_score), speed.shape)
-        origin = np.array([lat[origin_i], lon[origin_j]], dtype=float)  # lat, lon
+        origin_lat_idx, origin_lon_idx = np.unravel_index(
+            np.argmax(seed_score), speed.shape
+        )
+        origin = np.array(
+            [lat[origin_lat_idx], lon[origin_lon_idx]], dtype=float
+        )
 
         def trace(direction: int) -> list[np.ndarray]:
             point = origin.copy()
@@ -219,10 +224,12 @@ def compute_signed_distance_km(
     t = np.clip(-np.einsum("ij,ij->i", start, seg) / seg_len2, 0.0, 1.0)
     closest = start + t[:, np.newaxis] * seg
     dist = np.hypot(closest[:, 0], closest[:, 1])
-    i = int(np.argmin(dist))
-    closest_lat = start_lat[i] + t[i] * (end_lat[i] - start_lat[i])
+    nearest_idx = int(np.argmin(dist))
+    closest_lat = start_lat[nearest_idx] + t[nearest_idx] * (
+        end_lat[nearest_idx] - start_lat[nearest_idx]
+    )
     side = "N" if center_lat >= closest_lat else "S"
-    signed = dist[i] if side == "N" else -dist[i]
+    signed = dist[nearest_idx] if side == "N" else -dist[nearest_idx]
     return float(signed), side
 
 
@@ -255,7 +262,8 @@ def load_track_observations(
     return pd.concat(frames, ignore_index=True)
 
 
-def main(experiment: str | None = None):
+def main(experiment: str | None = None) -> None:
+    """Trace daily streamlines and write streamline and movement Parquet files."""
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")

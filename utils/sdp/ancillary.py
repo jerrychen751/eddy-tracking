@@ -1,3 +1,5 @@
+"""Load and sample SST and SSS grids for the SDP model."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -25,6 +27,7 @@ def _parse_sss_center_date(filename: str) -> dt.date:
 
 
 def load_sst_dataset(sst_dir: Path) -> xr.DataArray:
+    """Load SST composites into one in-memory time-indexed array."""
     sst_dir = Path(sst_dir)
     files = sorted(sst_dir.glob('*.nc'))
     if not files:
@@ -42,6 +45,7 @@ def load_sst_dataset(sst_dir: Path) -> xr.DataArray:
 
 
 def load_sss_dataset(sss_dir: Path) -> xr.DataArray:
+    """Load SSS composites into one in-memory time-indexed array."""
     sss_dir = Path(sss_dir)
     files = sorted(sss_dir.glob('*.nc4'))
     if not files:

@@ -1,10 +1,8 @@
 """
 Run the SDP pigment model on collocated PACE Rrs observations.
 
-For each per-eddy Rrs Parquet file produced by collocate_pace.py, preprocesses
-the spectra (interpolate to 1nm, smooth, trim), samples SST/SSS at
-each pixel location, runs the Kramer et al. (2022) SDP model, and
-writes per-eddy pigment CSVs.
+For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS,
+runs the Kramer et al. (2022) model, and writes a pigment Parquet file.
 """
 
 import argparse
@@ -12,104 +10,114 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 
-from utils.config import load_config, resolve_data_dir, resolve_output_dir, METADATA_COLS
+from utils.config import (
+    METADATA_COLS,
+    load_config,
+    resolve_data_dir,
+    resolve_output_dir,
+)
+from utils.sdp import run_sdp
 from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
 from utils.sdp.preprocessing import preprocess_rrs_batch
-from utils.sdp import run_sdp
-
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-args = parser.parse_args()
-
-cfg = load_config(args.experiment)
-
-PACE_DIR = resolve_data_dir(cfg, "pace_dir")
-SST_DIR = resolve_data_dir(cfg, "sst_dir")
-SSS_DIR = resolve_data_dir(cfg, "sss_dir")
 
 
-def process_eddy(rrs_path: Path, out_path: Path, sst_da, sss_da) -> bool:
+def process_eddy(
+    rrs_path: Path,
+    out_path: Path,
+    sst_data: xr.DataArray,
+    sss_data: xr.DataArray,
+) -> bool:
     """
-    Run preprocessing + SDP on one eddy's Rrs Parquet file.
+    Write pigments for one eddy unless output exists or ancillary data is absent.
 
-    Separates metadata from Rrs columns, preprocesses spectra to 1nm,
-    samples nearest SST/SSS, runs the SDP model, and writes a pigments
-    Parquet with metadata columns preserved.
-
-    Returns True if the file was written, False if skipped.
+    Returns ``True`` only when a new Parquet file is written.
     """
     if out_path.exists():
         print(f"Already exists: {out_path.name}")
         return False
 
-    df = pd.read_parquet(rrs_path)
+    observations = pd.read_parquet(rrs_path)
 
-    # Separate metadata from Rrs columns
-    rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
-    wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
-    rrs_raw = df[rrs_cols].values
+    rrs_columns = [column for column in observations if column.startswith("Rrs_")]
+    wavelengths = np.array(
+        [float(column.split("_")[1]) for column in rrs_columns]
+    )
+    raw_rrs = observations[rrs_columns].values
 
-    # Preprocess: interpolate to 1nm (cubic spline), smooth, trim → 301 values
-    wl_processed, rrs_processed = preprocess_rrs_batch(wavelengths, rrs_raw)
-
-    # Sample SST/SSS at each pixel's (lon, lat, date)
-    sst_vals, sss_vals = sample_ancillary(
-        sst_da, sss_da,
-        lons=df["pixel_lon"].values,
-        lats=df["pixel_lat"].values,
-        times=pd.to_datetime(df["date"]).values,
+    processed_wavelengths, processed_rrs = preprocess_rrs_batch(
+        wavelengths, raw_rrs
     )
 
-    # Drop rows where SST or SSS is NaN (land mask or temporal gaps in
-    # 8-day composites). The GSM physics model needs both values to
-    # compute seawater backscattering.
-    valid = np.isfinite(sst_vals) & np.isfinite(sss_vals)
-    n_dropped = (~valid).sum()
-    if n_dropped > 0:
-        print(f"Dropped {n_dropped}/{len(valid)} pixels with missing SST/SSS")
+    sst_values, sss_values = sample_ancillary(
+        sst_data,
+        sss_data,
+        lons=observations["pixel_lon"].values,
+        lats=observations["pixel_lat"].values,
+        times=pd.to_datetime(observations["date"]).values,
+    )
 
-    if valid.sum() == 0:
-        print(f"No valid pixels after SST/SSS filtering, skipping")
+    # The GSM physics model needs both ancillary values for backscattering.
+    valid_pixels = np.isfinite(sst_values) & np.isfinite(sss_values)
+    n_dropped = int((~valid_pixels).sum())
+    if n_dropped:
+        print(
+            f"Dropped {n_dropped}/{len(valid_pixels)} pixels with missing SST/SSS"
+        )
+
+    if not valid_pixels.any():
+        print("No valid pixels after SST/SSS filtering, skipping")
         return False
 
-    df = df[valid].reset_index(drop=True)
-    rrs_processed = rrs_processed[valid]
-    sst_vals = sst_vals[valid]
-    sss_vals = sss_vals[valid]
+    observations = observations[valid_pixels].reset_index(drop=True)
+    processed_rrs = processed_rrs[valid_pixels]
+    sst_values = sst_values[valid_pixels]
+    sss_values = sss_values[valid_pixels]
 
-    # Build the integer-wavelength DataFrame that run_sdp expects
-    wl_int = wl_processed.astype(int)
-    rrs_df = pd.DataFrame(rrs_processed, columns=wl_int)
+    integer_wavelengths = processed_wavelengths.astype(int)
+    rrs_frame = pd.DataFrame(processed_rrs, columns=integer_wavelengths)
 
-    pigments_df = run_sdp(
-        rrs=rrs_df,
-        wl=wl_processed,
-        sst=sst_vals,
-        sss=sss_vals,
+    pigments = run_sdp(
+        rrs=rrs_frame,
+        wl=processed_wavelengths,
+        sst=sst_values,
+        sss=sss_values,
     )
 
-    # Attach metadata columns from the original Rrs CSV
-    for i, col in enumerate(METADATA_COLS):
-        pigments_df.insert(i, col, df[col].values)
+    for col_idx, column in enumerate(METADATA_COLS):
+        pigments.insert(col_idx, column, observations[column].values)
 
-    pigments_df.to_parquet(out_path, index=False)
+    pigments.to_parquet(out_path, index=False)
 
-    n_dates = df["date"].nunique()
-    print(f"Wrote {out_path.name}: {len(pigments_df)} pixels, {n_dates} dates")
+    n_dates = observations["date"].nunique()
+    print(f"Wrote {out_path.name}: {len(pigments)} pixels, {n_dates} dates")
     return True
 
 
-def main():
-    # Load SST/SSS grids once — these cover the full date range
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
+
+
+def main(experiment: str | None = None) -> None:
+    """Process all collocated eddies and write missing pigment Parquet files."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+
+    cfg = load_config(experiment)
+    sst_dir = resolve_data_dir(cfg, "sst_dir")
+    sss_dir = resolve_data_dir(cfg, "sss_dir")
+
     print("Loading SST/SSS grids...")
-    sst_da = load_sst_dataset(SST_DIR)
-    sss_da = load_sss_dataset(SSS_DIR)
+    sst_data = load_sst_dataset(sst_dir)
+    sss_data = load_sss_dataset(sss_dir)
 
     n_written = 0
     for polarity in ("cyclone", "anticyclone"):
-        rrs_dir = resolve_output_dir(args.experiment, "collocate_pace", polarity)
-        out_dir = resolve_output_dir(args.experiment, "pigments", polarity)
+        rrs_dir = resolve_output_dir(experiment, "collocate_pace", polarity)
+        out_dir = resolve_output_dir(experiment, "pigments", polarity)
 
         rrs_files = sorted(rrs_dir.glob("eddy_*_rrs.parquet"))
         if not rrs_files:
@@ -117,9 +125,11 @@ def main():
             continue
 
         print(f"[{polarity}] Processing {len(rrs_files)} eddies...")
-        for fp in rrs_files:
-            out_path = out_dir / fp.name.replace("_rrs.parquet", "_pigments.parquet")
-            if process_eddy(fp, out_path, sst_da, sss_da):
+        for rrs_path in rrs_files:
+            out_path = out_dir / rrs_path.name.replace(
+                "_rrs.parquet", "_pigments.parquet"
+            )
+            if process_eddy(rrs_path, out_path, sst_data, sss_data):
                 n_written += 1
 
     print(f"Done. {n_written} pigment files written.")

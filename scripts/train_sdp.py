@@ -378,8 +378,8 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
     # Start modelling
     for i in range(len(pigs2mdl)):
         pigment = pigs2mdl[i]
-        pigment_index = hplc_vars.index(pigment)
-        hplc_i = hplc[:, pigment_index]
+        pigment_idx = hplc_vars.index(pigment)
+        hplc_i = hplc[:, pigment_idx]
         coefficients, intercepts, summary_gofs, all_gofs = rrsModelTrain(diffD2.T, hplc_i, pft_index, n_permutations, max_pcs, k, mdl_pick_metric, seed=100)
 
         # Save coefficients to CSV files in the coefficients folder

@@ -15,11 +15,20 @@ import argparse
 import subprocess
 import sys
 import time
+from collections.abc import Collection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from pathlib import Path
 
 from utils.config import PROJECT_ROOT
+
+__all__ = [
+    "DEFAULT_STAGES",
+    "OPTIONAL_STAGES",
+    "PARALLEL_STAGES",
+    "VALID_STAGES",
+    "main",
+    "resolve_stages",
+]
 
 # Default stage order for the analysis-ready gold table.
 # Each name matches its script ({stage}.py).
@@ -49,13 +58,14 @@ VALID_STAGES = DEFAULT_STAGES + OPTIONAL_STAGES
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
 
 
-def log_stage(action, stage):
+def _log_stage(action: str, stage: str) -> None:
+    """Print a timestamped stage status."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] -- {action}: {stage} --")
 
 
-def run_stage(experiment, stage):
-    """Run a pipeline stage as a subprocess."""
+def _run_stage(experiment: str, stage: str) -> None:
+    """Run one stage as a child process, printing start and completion times."""
     script = PROJECT_ROOT / f"{stage}.py"
     if not script.exists():
         print(
@@ -64,26 +74,28 @@ def run_stage(experiment, stage):
         )
         sys.exit(1)
 
-    log_stage("START", stage)
+    _log_stage("START", stage)
     subprocess.run([sys.executable, str(script), experiment], check=True)
-    log_stage("DONE", stage)
+    _log_stage("DONE", stage)
 
 
-def run_parallel_downloads(experiment, stages_to_run):
-    """
-    Each download is a subprocess, so threads just wait on I/O —
-    the GIL doesn't matter here. Exits on first failure.
-    """
-    downloads = [s for s in PARALLEL_STAGES if s in stages_to_run]
-    if not downloads:
+def _run_parallel_downloads(
+    experiment: str,
+    stages_to_run: Collection[str],
+) -> None:
+    """Run selected download subprocesses concurrently and exit on failure."""
+    download_stages = [
+        stage for stage in PARALLEL_STAGES if stage in stages_to_run
+    ]
+    if not download_stages:
         return
 
-    print(f"Running {len(downloads)} parallel download(s)...")
+    print(f"Running {len(download_stages)} parallel download(s)...")
 
-    with ThreadPoolExecutor(max_workers=len(downloads)) as pool:
+    with ThreadPoolExecutor(max_workers=len(download_stages)) as pool:
         futures = {
-            pool.submit(run_stage, experiment, stage): stage
-            for stage in downloads
+            pool.submit(_run_stage, experiment, stage): stage
+            for stage in download_stages
         }
         for future in as_completed(futures):
             stage = futures[future]
@@ -99,12 +111,14 @@ def run_parallel_downloads(experiment, stages_to_run):
     print("All downloads complete.")
 
 
-def resolve_stages(args_stages, from_stage):
+def resolve_stages(
+    args_stages: list[str],
+    from_stage: str | None,
+) -> list[str]:
     """
-    Three modes:
-        1. No stages and no --from → default gold-table stages
-        2. --from <stage> → that stage and everything after it in its branch
-        3. Explicit stage list → only those stages
+    Resolve default, ``--from``, or explicitly selected stages.
+
+    Raises ``SystemExit`` when a stage name is unknown.
     """
     if from_stage:
         if from_stage not in VALID_STAGES:
@@ -133,7 +147,8 @@ def resolve_stages(args_stages, from_stage):
     return args_stages
 
 
-def main():
+def main() -> None:
+    """Parse CLI arguments and run the selected stage subprocesses."""
     parser = argparse.ArgumentParser()
     parser.add_argument("experiment")
     parser.add_argument("stages", nargs="*")
@@ -156,20 +171,21 @@ def main():
     print(f"Stages: {' '.join(stages_to_run)}")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Parallel downloads
-    stages_set = set(stages_to_run)
-    run_parallel_downloads(args.experiment, stages_set)
+    selected_stages = set(stages_to_run)
+    _run_parallel_downloads(args.experiment, selected_stages)
 
     # Sequential stages (everything after downloads), in canonical order even
     # when the user passes an explicit subset.
-    sequential = [s for s in VALID_STAGES if s not in PARALLEL_STAGES]
-    for stage in sequential:
-        if stage in stages_set:
-            run_stage(args.experiment, stage)
+    sequential_stages = [
+        stage for stage in VALID_STAGES if stage not in PARALLEL_STAGES
+    ]
+    for stage in sequential_stages:
+        if stage in selected_stages:
+            _run_stage(args.experiment, stage)
 
     elapsed = time.monotonic() - start_time
-    mins, secs = divmod(int(elapsed), 60)
-    print(f"Pipeline complete, {mins}m {secs}s")
+    minutes, seconds = divmod(int(elapsed), 60)
+    print(f"Pipeline complete, {minutes}m {seconds}s")
 
 
 if __name__ == "__main__":

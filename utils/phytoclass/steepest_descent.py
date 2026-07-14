@@ -133,7 +133,7 @@ def steepest_descent(
         weights: per-pigment NNLS weights (Tchla weight forced to 1).
         vary_rows, vary_cols: coordinate arrays for non-zero entries in F's
             non-Tchla submatrix (position (row, col) with col < n_pigments-1).
-        num_loops: outer iteration count — R uses 10 if SA temperature > 0.3
+        num_loops: outer iteration count - R uses 10 if SA temperature > 0.3
             else 2.
         rng: numpy RNG.
 

@@ -42,7 +42,7 @@ def random_neighbour(
         - Retry up to 50 rounds of fresh uniform draws for any entries that
           land outside [minF, maxF].
         - Beyond round 50, sample from U(min(min*1.2, max*0.8), max(...))
-          — shrunken bounds with sort-fixup for the corner case where the
+          using shrunken bounds with sort-fixup for the corner case where the
           shrinkage inverts them.
 
     Returns the dict from nnls_mf on the new F.

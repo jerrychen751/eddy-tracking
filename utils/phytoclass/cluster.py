@@ -12,7 +12,7 @@ R's Cluster() does:
 
 The Python port keeps steps 1-3 (Box-Cox via scipy.stats.boxcox, Ward linkage
 via scipy which is mathematically equivalent to R's ward.D2), but cannot
-replicate step 4 exactly — there is no pure-Python port of dynamicTreeCut.
+replicate step 4 exactly - there is no pure-Python port of dynamicTreeCut.
 Instead, we cut with scipy.cluster.hierarchy.fcluster at a user-specified
 cophenetic distance threshold and post-hoc merge small clusters into their
 nearest large-cluster centroid. Clusters produced this way are similar to R's

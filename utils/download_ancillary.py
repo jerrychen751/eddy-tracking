@@ -1,3 +1,5 @@
+"""Download and spatially subset SST and SSS ancillary products."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -20,7 +22,7 @@ def strip_harmony_prefix(filename: str) -> str:
 
 def infer_lat_lon_names(ds: xr.Dataset) -> tuple[str, str]:
     """
-    SST uses 'lat'/'lon', SSS uses 'latitude'/'longitude' — this normalizes
+    SST uses 'lat'/'lon', SSS uses 'latitude'/'longitude' - this normalizes
     both so downstream code does not need to know which product is loaded.
     """
     lat_name = next((n for n in ("lat", "latitude") if n in ds.coords), None)
@@ -64,6 +66,7 @@ def subset_to_bbox(
     lon_range: tuple[float, float],
     lat_range: tuple[float, float],
 ) -> None:
+    """Read a NetCDF file and atomically write its bounding-box subset."""
     with xr.open_dataset(input_path) as ds:
         subset_to_bbox_ds(ds, output_path, lon_range, lat_range)
 

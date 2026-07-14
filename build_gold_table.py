@@ -1,201 +1,295 @@
 """
 Assemble the gold eddy-pigment table: one analysis-ready row per eddy-day.
 
-Aggregates the per-pixel pigments from run_sdp (silver/pigments) to eddy-interior means, attaches eddy size/strength/age (tracks), Rossby diagnostics (eddy_dynamics), movement and signed Gulf-Stream distance (gulf_stream), a cyclical time-of-year encoding, and the log-ratio targets once the background means exist. Writes gold/eddy_pigment_table.parquet.
+Aggregates per-pixel pigments to eddy-interior means, joins track and
+environmental features, and writes ``gold/eddy_pigment_table.parquet``.
 """
 
 import argparse
 import datetime as dt
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from gulf_stream import compute_signed_distance_km, index_centerlines_by_date
+from utils.config import load_config, resolve_gold_dir, resolve_output_dir
 from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 
-from gulf_stream import index_centerlines_by_date, compute_signed_distance_km
-from utils.config import load_config, resolve_output_dir, resolve_gold_dir
-
-parser = argparse.ArgumentParser()
-parser.add_argument("experiment")
-args = parser.parse_args()
-cfg = load_config(args.experiment)
-
-EXPERIMENT = args.experiment
-GULF_STREAM_DIR = resolve_output_dir(EXPERIMENT, "gulf_stream")
-BACKGROUND_DIR = resolve_output_dir(EXPERIMENT, "pigments", "background")
-DYNAMICS_DIR = resolve_output_dir(EXPERIMENT, "eddy_dynamics")
-EDDY_START = pd.Timestamp(cfg["base"]["time"]["eddy_date_range"][0])
-EDDY_END = pd.Timestamp(cfg["base"]["time"]["eddy_date_range"][1])
-
-# on-disk pigment name -> canonical (space-free) suffix used in the table
+# On-disk pigment name to the space-free suffix used in table columns.
 PIGMENTS = {
-    "T chla": "Tchla", "Zea": "Zea", "DV chla": "DV_chla", "ButFuco": "ButFuco",
-    "HexFuco": "HexFuco", "Allo": "Allo", "MV chlb": "MV_chlb", "Neo": "Neo",
-    "Viola": "Viola", "Fuco": "Fuco", "chl c1+c2": "Chlc12", "chl c3": "Chlc3",
+    "T chla": "Tchla",
+    "Zea": "Zea",
+    "DV chla": "DV_chla",
+    "ButFuco": "ButFuco",
+    "HexFuco": "HexFuco",
+    "Allo": "Allo",
+    "MV chlb": "MV_chlb",
+    "Neo": "Neo",
+    "Viola": "Viola",
+    "Fuco": "Fuco",
+    "chl c1+c2": "Chlc12",
+    "chl c3": "Chlc3",
     "Perid": "Perid",
 }
 PET_EPOCH = dt.date(1950, 1, 1)
-# Eddy-days with fewer interior pixels than this give unreliable means and are dropped.
+# Minimum interior sample size for a reliable eddy-day mean.
 MIN_EDDY_PIXELS = 10
 
 
-def aggregate_eddy_days() -> pd.DataFrame:
-    """One row per (polarity, track_id, date): eddy-interior pigment means + QC."""
+def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
+    """Aggregate pigment files to one quality-control row per eddy-day."""
     rows = []
-    for polarity, pol_val in [("anticyclone", 0), ("cyclone", 1)]:
-        pig_dir = resolve_output_dir(EXPERIMENT, "pigments", polarity)
-        for fp in sorted(pig_dir.glob("*_pigments.parquet")):
-            df = pd.read_parquet(fp)
-            for date, grp in df.groupby("date"):
+    for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
+        pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
+        for pigment_path in sorted(pigment_dir.glob("*_pigments.parquet")):
+            pigments = pd.read_parquet(pigment_path)
+            for date, group in pigments.groupby("date"):
                 row = {
-                    "track_id": int(grp["track_id"].iloc[0]),
+                    "track_id": int(group["track_id"].iloc[0]),
                     "date": pd.Timestamp(date),
-                    "polarity": pol_val,
-                    "center_lon": float(grp["center_lon"].mean()),
-                    "center_lat": float(grp["center_lat"].mean()),
-                    "valid_frac": float(grp["coverage"].iloc[0]),
-                    "n_eddy_pixels": int(len(grp)),
+                    "polarity": polarity_value,
+                    "center_lon": float(group["center_lon"].mean()),
+                    "center_lat": float(group["center_lat"].mean()),
+                    "valid_frac": float(group["coverage"].iloc[0]),
+                    "n_eddy_pixels": int(len(group)),
                 }
-                for raw, canon in PIGMENTS.items():
-                    row[f"eddy_mean_{canon}"] = float(grp[raw].mean())
+                for source_name, column_suffix in PIGMENTS.items():
+                    row[f"eddy_mean_{column_suffix}"] = float(
+                        group[source_name].mean()
+                    )
                 rows.append(row)
     return pd.DataFrame(rows)
 
 
-def build_track_features() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Per-obs (radius_km, amplitude_cm) and per-track (birth/death) for both polarities."""
-    obs_frames, life_rows = [], []
-    for polarity, pol_val in [("anticyclone", 0), ("cyclone", 1)]:
-        tdir = resolve_output_dir(EXPERIMENT, "eddy_track", polarity)
-        tr = TrackEddiesObservations.load_file(str(tdir / f"{tdir.name}_tracks.zarr"))
-        keep = ~tr.virtual.astype(bool)
-        days = pd.to_datetime([PET_EPOCH + dt.timedelta(days=int(t)) for t in tr.time[keep]])
-        df = pd.DataFrame({
-            "polarity": pol_val,
-            "track_id": tr.track[keep].astype(int),
-            "date": days,
-            "radius_km": tr.radius_s[keep] / 1000.0,
-            "amplitude_cm": tr.amplitude[keep] * 100.0,
-        }).sort_values("date")
-        obs_frames.append(df)
-        for tid, grp in df.groupby("track_id"):
-            life_rows.append({
-                "polarity": pol_val, "track_id": tid,
-                "birth_date": grp["date"].min(), "death_date": grp["date"].max(),
-            })
-    return pd.concat(obs_frames, ignore_index=True), pd.DataFrame(life_rows)
+def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build observation features and birth/death dates for both polarities."""
+    observation_frames = []
+    lifetime_rows = []
+    for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
+        track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
+        tracks = TrackEddiesObservations.load_file(
+            str(track_dir / f"{track_dir.name}_tracks.zarr")
+        )
+        observed = ~tracks.virtual.astype(bool)
+        dates = pd.to_datetime(
+            [
+                PET_EPOCH + dt.timedelta(days=int(time))
+                for time in tracks.time[observed]
+            ]
+        )
+        track_observations = pd.DataFrame(
+            {
+                "polarity": polarity_value,
+                "track_id": tracks.track[observed].astype(int),
+                "date": dates,
+                "radius_km": tracks.radius_s[observed] / 1000.0,
+                "amplitude_cm": tracks.amplitude[observed] * 100.0,
+            }
+        ).sort_values("date")
+        observation_frames.append(track_observations)
+        for track_id, group in track_observations.groupby("track_id"):
+            lifetime_rows.append(
+                {
+                    "polarity": polarity_value,
+                    "track_id": track_id,
+                    "birth_date": group["date"].min(),
+                    "death_date": group["date"].max(),
+                }
+            )
+    return (
+        pd.concat(observation_frames, ignore_index=True),
+        pd.DataFrame(lifetime_rows),
+    )
 
 
-def load_eddy_dynamics() -> pd.DataFrame:
-    """Per-observation Rossby diagnostics for both polarities, if generated."""
+def load_eddy_dynamics(dynamics_dir: Path) -> pd.DataFrame:
+    """Load available per-observation Rossby diagnostics for both polarities."""
     frames = []
-    for polarity, pol_val in [("anticyclone", 0), ("cyclone", 1)]:
-        fp = DYNAMICS_DIR / polarity / "dynamics.parquet"
-        if not fp.exists():
+    for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
+        dynamics_path = dynamics_dir / polarity / "dynamics.parquet"
+        if not dynamics_path.exists():
             continue
-        df = pd.read_parquet(fp)
-        df["polarity"] = pol_val
-        frames.append(df[[
-            "polarity", "track_id", "date",
-            "rossby_center", "rossby_mean", "rossby_abs_mean",
-            "rossby_min", "rossby_max", "n_rossby_pixels",
-        ]])
+        dynamics = pd.read_parquet(dynamics_path)
+        dynamics["polarity"] = polarity_value
+        frames.append(
+            dynamics[
+                [
+                    "polarity",
+                    "track_id",
+                    "date",
+                    "rossby_center",
+                    "rossby_mean",
+                    "rossby_abs_mean",
+                    "rossby_min",
+                    "rossby_max",
+                    "n_rossby_pixels",
+                ]
+            ]
+        )
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def compute_gs_distance(centerline_by_date, date, center_lon, center_lat) -> float:
-    """Signed nearest-polyline distance (km, + = north of the jet) to the nearest-day streamline."""
+    """Return signed distance in km to the nearest-date Gulf Stream line."""
     base = pd.Timestamp(date).date()
     centerline = next(
-        (centerline_by_date[d] for delta in range(5)
-         for d in (base - dt.timedelta(delta), base + dt.timedelta(delta))
-         if d in centerline_by_date),
+        (
+            centerline_by_date[candidate_date]
+            for delta in range(5)
+            for candidate_date in (
+                base - dt.timedelta(delta),
+                base + dt.timedelta(delta),
+            )
+            if candidate_date in centerline_by_date
+        ),
         None,
     )
     if centerline is None:
         return np.nan
-    dist, _ = compute_signed_distance_km(centerline.lon, centerline.lat, center_lon, center_lat)
+    dist, _ = compute_signed_distance_km(
+        centerline.lon, centerline.lat, center_lon, center_lat
+    )
     return dist
 
 
-def main():
-    eddy = aggregate_eddy_days()
-    if eddy.empty:
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
+
+
+def main(experiment: str | None = None) -> None:
+    """Assemble and write the experiment's gold eddy-pigment table."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+
+    cfg = load_config(experiment)
+    gulf_stream_dir = resolve_output_dir(experiment, "gulf_stream")
+    background_dir = resolve_output_dir(experiment, "pigments", "background")
+    dynamics_dir = resolve_output_dir(experiment, "eddy_dynamics")
+    eddy_start = pd.Timestamp(cfg["base"]["time"]["eddy_date_range"][0])
+    eddy_end = pd.Timestamp(cfg["base"]["time"]["eddy_date_range"][1])
+
+    eddy_days = aggregate_eddy_days(experiment)
+    if eddy_days.empty:
         print("No eddy pigment files found; nothing to assemble.")
         return
-    n_eddies = len(eddy[["polarity", "track_id"]].drop_duplicates())
-    print(f"Aggregated {len(eddy)} eddy-days from {n_eddies} eddies")
+    n_eddies = len(eddy_days[["polarity", "track_id"]].drop_duplicates())
+    print(f"Aggregated {len(eddy_days)} eddy-days from {n_eddies} eddies")
 
-    # Drop eddy-days whose interior is too sparsely sampled for a reliable mean.
-    n_before = len(eddy)
-    eddy = eddy[eddy["n_eddy_pixels"] >= MIN_EDDY_PIXELS].reset_index(drop=True)
-    if n_before - len(eddy):
-        print(f"Dropped {n_before - len(eddy)} eddy-days with < {MIN_EDDY_PIXELS} interior pixels")
+    n_before = len(eddy_days)
+    eddy_days = eddy_days[
+        eddy_days["n_eddy_pixels"] >= MIN_EDDY_PIXELS
+    ].reset_index(drop=True)
+    n_dropped = n_before - len(eddy_days)
+    if n_dropped:
+        print(
+            f"Dropped {n_dropped} eddy-days with < {MIN_EDDY_PIXELS} "
+            "interior pixels"
+        )
 
-    # Eddy size/strength (nearest track obs by date) + lifetime
-    obs, life = build_track_features()
-    eddy = pd.merge_asof(
-        eddy.sort_values("date"), obs.sort_values("date"),
-        on="date", by=["polarity", "track_id"], direction="nearest",
-    ).merge(life, on=["polarity", "track_id"], how="left")
+    track_observations, track_lifetimes = build_track_features(experiment)
+    eddy_days = pd.merge_asof(
+        eddy_days.sort_values("date"),
+        track_observations.sort_values("date"),
+        on="date",
+        by=["polarity", "track_id"],
+        direction="nearest",
+    ).merge(track_lifetimes, on=["polarity", "track_id"], how="left")
 
-    lifetime = (eddy["death_date"] - eddy["birth_date"]).dt.days
-    eddy["age_days"] = (eddy["date"] - eddy["birth_date"]).dt.days
-    eddy["age_frac"] = np.where(lifetime > 0, eddy["age_days"] / lifetime, np.nan)
+    lifetime_days = (eddy_days["death_date"] - eddy_days["birth_date"]).dt.days
+    eddy_days["age_days"] = (
+        eddy_days["date"] - eddy_days["birth_date"]
+    ).dt.days
+    eddy_days["age_frac"] = np.where(
+        lifetime_days > 0,
+        eddy_days["age_days"] / lifetime_days,
+        np.nan,
+    )
     # A composite date can fall just outside a track's daily detections; keep the
     # life fraction within [0, 1].
-    eddy["age_frac"] = eddy["age_frac"].clip(0, 1)
-    eddy["birth_observed"] = eddy["birth_date"] > EDDY_START
-    eddy["death_observed"] = eddy["death_date"] < EDDY_END
+    eddy_days["age_frac"] = eddy_days["age_frac"].clip(0, 1)
+    eddy_days["birth_observed"] = eddy_days["birth_date"] > eddy_start
+    eddy_days["death_observed"] = eddy_days["death_date"] < eddy_end
     # Cyclical yd/365 encoding; convention from Gregor et al. (2018)
-    yd = eddy["date"].dt.dayofyear - 1
-    angle = 2 * np.pi * yd / 365
-    eddy["time_of_year_cos"] = np.cos(angle)
-    eddy["time_of_year_sin"] = np.sin(angle)
+    year_day = eddy_days["date"].dt.dayofyear - 1
+    angle = 2 * np.pi * year_day / 365
+    eddy_days["time_of_year_cos"] = np.cos(angle)
+    eddy_days["time_of_year_sin"] = np.sin(angle)
 
-    # Rossby diagnostics (nearest track obs by date, same convention as size/strength).
-    dynamics = load_eddy_dynamics()
+    dynamics = load_eddy_dynamics(dynamics_dir)
     if not dynamics.empty:
-        eddy = pd.merge_asof(
-            eddy.sort_values("date"), dynamics.sort_values("date"),
-            on="date", by=["polarity", "track_id"], direction="nearest",
+        eddy_days = pd.merge_asof(
+            eddy_days.sort_values("date"),
+            dynamics.sort_values("date"),
+            on="date",
+            by=["polarity", "track_id"],
+            direction="nearest",
         )
         print("Joined Rossby diagnostics from eddy_dynamics")
     else:
-        print(f"(no eddy dynamics files at {DYNAMICS_DIR} yet — Rossby diagnostics skipped)")
+        print(
+            f"(no eddy dynamics files at {dynamics_dir} yet - "
+            "Rossby diagnostics skipped)"
+        )
 
-    # Movement + signed Gulf-Stream distance
-    movement = pd.read_parquet(GULF_STREAM_DIR / "eddy_movement.parquet")
+    movement = pd.read_parquet(gulf_stream_dir / "eddy_movement.parquet")
     movement["polarity"] = movement["polarity"].map({"anticyclone": 0, "cyclone": 1})
-    eddy = eddy.merge(movement[["polarity", "track_id", "movement"]], on=["polarity", "track_id"], how="left")
-    streamline = pd.read_parquet(GULF_STREAM_DIR / "streamline.parquet")
+    eddy_days = eddy_days.merge(
+        movement[["polarity", "track_id", "movement"]],
+        on=["polarity", "track_id"],
+        how="left",
+    )
+    streamline = pd.read_parquet(gulf_stream_dir / "streamline.parquet")
     centerline_by_date = index_centerlines_by_date(streamline)
-    eddy["gs_dist_km"] = [
-        compute_gs_distance(centerline_by_date, d, lo, la)
-        for d, lo, la in zip(eddy["date"], eddy["center_lon"], eddy["center_lat"])
+    eddy_days["gs_dist_km"] = [
+        compute_gs_distance(centerline_by_date, date, lon, lat)
+        for date, lon, lat in zip(
+            eddy_days["date"],
+            eddy_days["center_lon"],
+            eddy_days["center_lat"],
+        )
     ]
 
-    # Background means + log-ratio targets (only once the background stage has run)
-    bg_path = BACKGROUND_DIR / "bg_mean.parquet"
-    if bg_path.exists():
-        eddy = eddy.merge(pd.read_parquet(bg_path), on="date", how="left")
-        log_ratio_cols = []
-        for canon in PIGMENTS.values():
-            if f"bg_mean_{canon}" in eddy:
-                col = f"log_ratio_{canon}"
+    background_path = background_dir / "bg_mean.parquet"
+    if background_path.exists():
+        eddy_days = eddy_days.merge(
+            pd.read_parquet(background_path), on="date", how="left"
+        )
+        log_ratio_columns = []
+        for column_suffix in PIGMENTS.values():
+            if f"bg_mean_{column_suffix}" in eddy_days:
+                log_ratio_column = f"log_ratio_{column_suffix}"
                 with np.errstate(divide="ignore"):
-                    eddy[col] = np.log(eddy[f"eddy_mean_{canon}"] / eddy[f"bg_mean_{canon}"])
-                log_ratio_cols.append(col)
+                    eddy_days[log_ratio_column] = np.log(
+                        eddy_days[f"eddy_mean_{column_suffix}"]
+                        / eddy_days[f"bg_mean_{column_suffix}"]
+                    )
+                log_ratio_columns.append(log_ratio_column)
         # A zero eddy mean (pigment below detection) gives -inf; treat it as missing.
-        n_nonfinite = int(np.isinf(eddy[log_ratio_cols].to_numpy()).sum())
-        eddy[log_ratio_cols] = eddy[log_ratio_cols].replace([np.inf, -np.inf], np.nan)
-        print(f"Joined background means; computed log-ratio targets "
-              f"({n_nonfinite} non-finite set to NaN)")
+        n_nonfinite = int(
+            np.isinf(eddy_days[log_ratio_columns].to_numpy()).sum()
+        )
+        eddy_days[log_ratio_columns] = eddy_days[log_ratio_columns].replace(
+            [np.inf, -np.inf], np.nan
+        )
+        print(
+            "Joined background means; computed log-ratio targets "
+            f"({n_nonfinite} non-finite set to NaN)"
+        )
     else:
-        print(f"(no background means at {bg_path} yet — log-ratio targets skipped)")
+        print(
+            f"(no background means at {background_path} yet - "
+            "log-ratio targets skipped)"
+        )
 
-    out_path = resolve_gold_dir(EXPERIMENT, "eddy_pigment_table.parquet")
-    eddy.to_parquet(out_path, index=False)
-    print(f"Wrote {out_path}  ({len(eddy)} rows x {len(eddy.columns)} cols)")
+    out_path = resolve_gold_dir(experiment, "eddy_pigment_table.parquet")
+    eddy_days.to_parquet(out_path, index=False)
+    print(
+        f"Wrote {out_path}  "
+        f"({len(eddy_days)} rows x {len(eddy_days.columns)} cols)"
+    )
 
 
 if __name__ == "__main__":

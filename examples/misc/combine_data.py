@@ -1,46 +1,53 @@
-import xarray as xr
-from glob import glob
-from pathlib import Path
+"""Combine the example SWOT L3 files along their line dimension."""
+
 import re
-import os
+from pathlib import Path
+
+import xarray as xr
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-def get_start_date(fn: str) -> str:
-    date_pattern = r'(\d{8}T\d{6})_\d{8}T\d{6}'
-    match = re.search(date_pattern, fn)
+
+def get_start_date(filename: str) -> str:
+    """Return the sortable start timestamp embedded in a SWOT filename."""
+    date_pattern = r"(\d{8}T\d{6})_\d{8}T\d{6}"
+    match = re.search(date_pattern, filename)
     if match:
         return match.group(1)
-    return ''
+    return ""
 
-# Collect and sort files by start date
-files = glob(str(SCRIPT_DIR / 'swot_l3_cycle474/raw/*.nc'))
-files.sort(key=get_start_date)
 
-# Open all datasets, drop incompatible num_nadir variables, concatenate along num_lines
-datasets = []
-for f in files:
-    ds = xr.open_dataset(f)
-    # Drop variables with num_nadir dimension (varies between files)
-    ds = ds.drop_vars(['i_num_line', 'i_num_pixel'], errors='ignore')
-    datasets.append(ds)
+def main() -> None:
+    """Combine example inputs and write the merged NetCDF output."""
+    input_paths = sorted(
+        (SCRIPT_DIR / "swot_l3_cycle474" / "raw").glob("*.nc"),
+        key=lambda path: get_start_date(path.name),
+    )
 
-combined = xr.concat(datasets, dim='num_lines')
+    datasets = []
+    try:
+        for input_path in input_paths:
+            dataset = xr.open_dataset(input_path)
+            dataset = dataset.drop_vars(
+                ["i_num_line", "i_num_pixel"], errors="ignore"
+            )
+            datasets.append(dataset)
 
-output_dir = str(SCRIPT_DIR / 'swot_l3_cycle474/combined')
-os.makedirs(output_dir, exist_ok=True)
+        combined = xr.concat(datasets, dim="num_lines")
+        for variable_name in combined.variables:
+            if combined[variable_name].dtype.kind == "f":
+                combined[variable_name].encoding.pop("dtype", None)
+                combined[variable_name].encoding.pop("_FillValue", None)
 
-# Clear integer encoding for float variables to avoid NaN issues
-for var in combined.variables:
-    if combined[var].dtype.kind == 'f':  # float variables
-        combined[var].encoding.pop('dtype', None)
-        combined[var].encoding.pop('_FillValue', None)
+        output_dir = SCRIPT_DIR / "swot_l3_cycle474" / "combined"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "swot_l3_cycle474_combined.nc"
+        combined.to_netcdf(output_path)
+        print(f"Written combined dataset to: {output_path}")
+    finally:
+        for dataset in datasets:
+            dataset.close()
 
-# Write merged dataset
-output_path = os.path.join(output_dir, 'swot_l3_cycle474_combined.nc')
-combined.to_netcdf(output_path)
-print(f"Written combined dataset to: {output_path}")
 
-# Clean up
-for ds in datasets:
-    ds.close()
+if __name__ == "__main__":
+    main()

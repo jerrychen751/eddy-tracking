@@ -33,11 +33,11 @@ def _solve_nnls_batched(
     A^T A across all samples. Mirrors R's RcppML::nnls(cd_maxit=1000, cd_tol=1e-8).
 
     Args:
-        A: (m, k) — in phytoclass: weighted F transpose (pigments, classes).
-        B: (n, m) — in phytoclass: weighted S (samples, pigments).
+        A: (m, k) - in phytoclass: weighted F transpose (pigments, classes).
+        B: (n, m) - in phytoclass: weighted S (samples, pigments).
 
     Returns:
-        X: (n, k) — non-negative solutions.
+        X: (n, k) - non-negative solutions.
     """
     AtA = A.T @ A
     AtB = A.T @ B.T
@@ -63,7 +63,7 @@ def nnls_mf(F: np.ndarray, S: np.ndarray, S_weights: np.ndarray | None = None) -
 
     Returns dict with keys:
         F: input F unchanged
-        RMSE: sqrt(mean((S - C_raw @ F)^2)) — raw (not row-normalized) C
+        RMSE: sqrt(mean((S - C_raw @ F)^2)) - raw (not row-normalized) C
         C: row-normalized C (each row sums to 1), shape (n_samples, n_classes)
         C_raw: the raw NNLS output before row-normalization (for internal use)
     """

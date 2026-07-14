@@ -97,6 +97,7 @@ def dlnasw_ds(Tc: int | float, S: int | float) -> float:
 
 
 def PMH(n_wat: float | np.ndarray) -> float | np.ndarray:
+    """Return the PMH refractive-index density derivative."""
     n_wat2 = n_wat ** 2
     n_density_derivative = (
         (n_wat2 - 1) * (1 + 2 / 3 * (n_wat2 + 2)
@@ -189,6 +190,7 @@ def gsm_cost(
     B: np.ndarray, 
     admstar: np.ndarray
 ) -> float:
+    """Return squared residual error for one GSM parameter vector."""
     g = np.array([0.0949, 0.0794])  # Constants from Gordon et al., 1988
 
     aph = A * IOPs[0]**B
@@ -210,6 +212,7 @@ def gsm_invert(
     B: np.ndarray, 
     admstar: np.ndarray
 ) -> np.ndarray:
+    """Fit GSM inherent optical properties for one spectrum."""
 
     IOPSinit = [0.15, 0.01, 0.0029]
 

@@ -14,19 +14,26 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-
-from utils.config import load_config, resolve_data_dir, resolve_output_dir
-from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
-from utils.sdp.preprocessing import preprocess_rrs_batch
-from utils.sdp.physics import get_rrs_residuals
-
-
 EXPERIMENT = "gulf_stream_20241001_20250701"
 OUTPUT_PATH = REPO_ROOT / "visuals" / "sdp_derivative_cascade.png"
 
 
-def main():
+def main() -> None:
+    """Render the SDP derivative cascade and write it to ``OUTPUT_PATH``."""
+    repo_path = str(REPO_ROOT)
+    sys.path.insert(0, repo_path)
+    try:
+        from utils.config import load_config, resolve_data_dir, resolve_output_dir
+        from utils.sdp.ancillary import (
+            load_sss_dataset,
+            load_sst_dataset,
+            sample_ancillary,
+        )
+        from utils.sdp.physics import get_rrs_residuals
+        from utils.sdp.preprocessing import preprocess_rrs_batch
+    finally:
+        sys.path.remove(repo_path)
+
     cfg = load_config(EXPERIMENT)
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
@@ -102,28 +109,28 @@ def main():
     ax.axhline(0, color="#888888", linewidth=0.6)
     annotate(ax)
     ax.set_ylabel("Residual (sr$^{-1}$)")
-    ax.set_title("(b) Residual = Rrs$_{measured}$ − Rrs$_{GSM}$ — baseline dominates, features are buried", loc="left", fontsize=11)
+    ax.set_title("(b) Residual = Rrs$_{measured}$ − Rrs$_{GSM}$ - baseline dominates, features are buried", loc="left", fontsize=11)
 
     ax = axes[2]
     ax.plot(wl_d1, d1, color="#1f3b70", linewidth=1.4)
     ax.axhline(0, color="#888888", linewidth=0.6)
     annotate(ax)
     ax.set_ylabel(r"d(Residual) / d$\lambda$")
-    ax.set_title("(c) 1st derivative — constant offset killed, broad tilt survives as a DC-ish level", loc="left", fontsize=11)
+    ax.set_title("(c) 1st derivative - constant offset killed, broad tilt survives as a DC-ish level", loc="left", fontsize=11)
 
     ax = axes[3]
     ax.plot(wl_d2, d2, color="#c23b22", linewidth=1.6)
     ax.axhline(0, color="#888888", linewidth=0.6)
     annotate(ax)
     ax.set_ylabel(r"d$^2$(Residual) / d$\lambda^2$")
-    ax.set_title("(d) 2nd derivative — what SDP feeds to the linear regression", loc="left", fontsize=11)
+    ax.set_title("(d) 2nd derivative - what SDP feeds to the linear regression", loc="left", fontsize=11)
     ax.set_xlabel("Wavelength (nm)")
 
     for ax in axes:
         ax.set_xlim(410, 695)
 
     fig.suptitle(
-        f"SDP preprocessing cascade — all cyclone pixels pooled (N={len(df):,})\n"
+        f"SDP preprocessing cascade - all cyclone pixels pooled (N={len(df):,})\n"
         "green dashes: chl-a Soret (440) & Qy (675) bands   ·   tan dashes: chl-b (470)   ·   gray band: PACE O$_2$ gap",
         fontsize=10,
     )

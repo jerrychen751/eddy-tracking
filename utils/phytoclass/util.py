@@ -141,7 +141,7 @@ def default_min_max(
         pigment_names: Column names of F.
 
     Returns:
-        (min_vec, max_vec) — flat vectors ordered in column-major over F.
+        (min_vec, max_vec) - flat vectors ordered in column-major over F.
 
     Raises:
         ValueError if any (class, pigment) pair is missing from min_max_df.
