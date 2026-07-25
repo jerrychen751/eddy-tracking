@@ -33,7 +33,7 @@ base:
       # AVISO experimental DUACS-MIOST L4 including SWOT, v3.0: gapless 2023-03-28 to
       # 2025-12-31 (a flat dir, no science/calval split, unlike v2_0_1).
       ftp_dir: "swot_products/l4_karin_nadir/v3_0/miost"
-      max_workers: 2
+      max_workers: 8
       filter_open_ocean: true
 
     pace:
