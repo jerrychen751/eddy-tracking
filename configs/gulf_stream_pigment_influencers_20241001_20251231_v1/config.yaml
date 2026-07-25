@@ -1,12 +1,8 @@
 # Changes from the base gulf_stream_pigment_influencers_20241001_20251231
 # experiment (v0):
-# 1. Use PET's speed contour instead of its effective contour. Speed contours
-#    tend to be smaller.
-# 2. Replace one-hot seasons with time_of_year_cos/time_of_year_sin using
-#    cos/sin of 2*pi*days/365, following Song et al. (2026, AIES).
-# 3. Write SWOT data to a separate bronze directory after masking cells where
-#    any required field is non-finite, cells within eight grid cells of that
-#    invalid region, and the Great Lakes box at lon [-81, -75], lat [40, 44].
+# 1. Eddy boundaries here are PET's speed contour instead of effective contour. This tends to make them smaller.
+# 2. Season column was originally one-hot encoded DJF/MAM/JJA/SON, replaced to become time_of_year_cos/time_of_year_sin using cos/sin of 2*pi*days/365, where days is number of days since Jan 1st. Follows Song et al. (2026, AIES).
+# 3. Eddy identification excludes the Great Lakes (hardcoded box, lon [-81,-75] x lat [40,44]) and any pixel within 8 SWOT grid pixels (~1 degree) of an invalid SWOT cell. This is applied at a very early stage before any computed outputs are produced from raw downloaded data. From the start, bronze data that lands will have this additional filtering applied.
 
 base:
 
