@@ -10,11 +10,11 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/download_pace_%j.log
 
-# Download PACE OCI L3 daily Rrs via earthaccess S3 streaming.
-# Slowest download — 270 individual files at ~13 MB each.
+# Download PACE OCI L3 daily Rrs through CMR search and OPeNDAP subsetting.
+# Downloads one regional subset for each matched granule.
 # Needs earthaccess credentials (~/.netrc or interactive login).
 
 cd ~/projects/eddy-tracking
 source .venv/bin/activate
 : "${EXPERIMENT:?EXPERIMENT env var is not set}"
-python -u download_pace.py "$EXPERIMENT"
+python -u -m eddy_tracking.downloads.pace "$EXPERIMENT"

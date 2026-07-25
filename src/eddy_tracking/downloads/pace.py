@@ -1,15 +1,23 @@
-"""PACE OCI L3 mapped Rrs download helpers (search + OPeNDAP subset)."""
+"""
+Download PACE OCI L3 mapped Rrs files.
+
+OB.DAAC OPenDAP provides server-side subsetting.
+"""
 
 from __future__ import annotations
 
-import os
+import argparse
 import re
 import sys
-import tempfile
 from pathlib import Path
 
 import earthaccess
 import xarray as xr
+
+from eddy_tracking.authentication import (
+    configure_obdaac_opendap_auth,
+    login_earthdata,
+)
 
 
 GRANULE_RE = {
@@ -19,7 +27,7 @@ GRANULE_RE = {
 
 # OB.DAAC Hyrax OPeNDAP root for PACE L3 mapped products, used to build a URL
 # when a granule's CMR metadata omits its OPENDAP DATA link (see download loop).
-OPENDAP_BASE = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
+_DOWNLOAD_BASE_URL = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
 
 
 def search_pace_l3_granules(
@@ -71,30 +79,6 @@ def _subset_and_save(
     tmp_path.rename(out_path)
 
 
-def _ensure_dap_auth() -> None:
-    """
-    Point libnetcdf's built-in OPeNDAP client at ~/.netrc so DAP URLs on
-    oceandata.sci.gsfc.nasa.gov authenticate against Earthdata Login with no
-    manual setup. Writes a throwaway rc file + cookie jar to a temp dir and
-    sets DAPRCFILE. HTTP.DEFLATE asks Hyrax to gzip the response (~75 -> ~42 MB
-    per granule on the wire).
-    """
-    netrc_path = Path.home() / ".netrc"
-    if not netrc_path.exists():
-        raise FileNotFoundError(
-            "~/.netrc with Earthdata Login credentials is required for OPeNDAP access"
-        )
-    dap_dir = Path(tempfile.gettempdir()) / "pace_opendap"
-    dap_dir.mkdir(exist_ok=True)
-    rc_path = dap_dir / ".dodsrc"
-    rc_path.write_text(
-        f"HTTP.NETRC={netrc_path}\n"
-        f"HTTP.COOKIEJAR={dap_dir / 'urs_cookies.txt'}\n"
-        "HTTP.DEFLATE=1\n"
-    )
-    os.environ["DAPRCFILE"] = str(rc_path)
-
-
 def download_pace_l3(
     date_range: tuple[str, str],
     lon_range: tuple[float, float],
@@ -106,8 +90,8 @@ def download_pace_l3(
     Search + download PACE L3 Rrs granules matching date_range and temporal_res.
     Skips files already in out_dir. Returns (saved, skipped, errors).
     """
-    earthaccess.login()
-    _ensure_dap_auth()
+    login_earthdata()
+    configure_obdaac_opendap_auth()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -134,7 +118,7 @@ def download_pace_l3(
             )
             if opendap_url is None:
                 start = filename.split(".")[1]  # PACE_OCI.<start>_<end>.L3m...
-                opendap_url = f"{OPENDAP_BASE}/{start[:4]}/{start[4:8]}/{filename}"
+                opendap_url = f"{_DOWNLOAD_BASE_URL}/{start[:4]}/{start[4:8]}/{filename}"
             with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
                 _subset_and_save(ds, out_path, lon_range, lat_range)
             size_mb = out_path.stat().st_size / (1024 * 1024)
@@ -145,3 +129,41 @@ def download_pace_l3(
             errors += 1
 
     return saved, skipped, errors
+
+
+def main(experiment: str | None = None) -> None:
+    """Download and save PACE files, exiting if any date fails."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+
+    from utils.config import load_config, resolve_data_dir
+
+    cfg = load_config(experiment)
+    longitude_range = tuple(cfg["base"]["region"]["lon_range"])
+    latitude_range = tuple(cfg["base"]["region"]["lat_range"])
+    date_range = tuple(cfg["base"]["time"]["rrs_date_range"])
+    temporal_resolution = cfg["base"]["download"]["pace"].get(
+        "temporal_resolution", "DAY"
+    )
+
+    n_saved, n_skipped, n_errors = download_pace_l3(
+        date_range=date_range,
+        lon_range=longitude_range,
+        lat_range=latitude_range,
+        out_dir=resolve_data_dir(cfg, "pace_dir"),
+        temporal_res=temporal_resolution,
+    )
+
+    print(f"Done. {n_saved} saved, {n_skipped} skipped, {n_errors} errors.")
+    if n_errors:
+        raise SystemExit(f"{n_errors} date(s) failed to download")
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    main()

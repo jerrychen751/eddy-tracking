@@ -57,6 +57,15 @@ VALID_STAGES = DEFAULT_STAGES + OPTIONAL_STAGES
 # Stages that are independent and can run in parallel
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
 
+_STAGE_MODULES = {
+    "download_swot": ("eddy_tracking.downloads.swot",),
+    "download_pace": ("eddy_tracking.downloads.pace",),
+    "download_sst_sss": (
+        "eddy_tracking.downloads.sst",
+        "eddy_tracking.downloads.sss",
+    ),
+}
+
 
 def _log_stage(action: str, stage: str) -> None:
     """Print a timestamped stage status."""
@@ -66,16 +75,25 @@ def _log_stage(action: str, stage: str) -> None:
 
 def _run_stage(experiment: str, stage: str) -> None:
     """Run one stage as a child process, printing start and completion times."""
-    script = PROJECT_ROOT / f"{stage}.py"
-    if not script.exists():
-        print(
-            f"ERROR: Script not found for stage '{stage}': {script}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    modules = _STAGE_MODULES.get(stage)
+    if modules is not None:
+        commands = [
+            [sys.executable, "-m", module, experiment]
+            for module in modules
+        ]
+    else:
+        script = PROJECT_ROOT / f"{stage}.py"
+        if not script.exists():
+            print(
+                f"ERROR: Script not found for stage '{stage}': {script}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        commands = [[sys.executable, str(script), experiment]]
 
     _log_stage("START", stage)
-    subprocess.run([sys.executable, str(script), experiment], check=True)
+    for command in commands:
+        subprocess.run(command, check=True)
     _log_stage("DONE", stage)
 
 

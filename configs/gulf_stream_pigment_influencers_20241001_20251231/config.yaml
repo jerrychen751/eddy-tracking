@@ -20,7 +20,6 @@ base:
     pace_dir: "pace_l3_8d"
     sss_dir: "sss"
     sst_dir: "sst"
-    sst_raw_tmp: "sst_raw_tmp"
     sss_raw_tmp: "sss_raw_tmp"
 
   download:
@@ -35,7 +34,6 @@ base:
 
     sst:
       collection_id: "C1615905770-OB_DAAC"
-      download_threads: 4
 
     sss:
       collection_id: "C2208422957-POCLOUD"

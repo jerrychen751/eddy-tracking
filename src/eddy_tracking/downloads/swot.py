@@ -1,22 +1,19 @@
 """Download, trim, and optionally mask daily AVISO L4 SSH files."""
 
 import argparse
-import os
 import re
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
-from ftplib import FTP
 from pathlib import Path
 from threading import Lock
 
-from dotenv import load_dotenv
 import numpy as np
 from scipy.ndimage import distance_transform_edt
 import xarray as xr
 
-from utils.config import load_config, resolve_data_dir
+from eddy_tracking.authentication import login_aviso, load_aviso_credentials
 
 
 SWOT_VALIDITY_FIELDS = ("adt", "ugos", "vgos", "relative_vorticity")
@@ -43,26 +40,15 @@ class DownloadSettings:
     filter_open_ocean: bool
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
+def load_settings(experiment: str) -> DownloadSettings:
+    from utils.config import load_config, resolve_data_dir
 
-
-def _load_settings(experiment: str) -> DownloadSettings:
-    load_dotenv()
-    for variable_name in ("FTP_HOST", "FTP_USER", "FTP_PASSWORD"):
-        if not os.environ.get(variable_name):
-            raise SystemExit(
-                f"Missing required env var: {variable_name} "
-                "(set in .env or environment)"
-            )
-
+    credentials = load_aviso_credentials()
     cfg = load_config(experiment)
     return DownloadSettings(
-        host=os.environ["FTP_HOST"],
-        user=os.environ["FTP_USER"],
-        password=os.environ["FTP_PASSWORD"],
+        host=credentials.host,
+        user=credentials.user,
+        password=credentials.password,
         remote_dir=cfg["base"]["download"]["swot"]["ftp_dir"],
         local_dir=resolve_data_dir(cfg, "swot_dir"),
         max_workers=cfg["base"]["download"]["swot"]["max_workers"],
@@ -73,18 +59,6 @@ def _load_settings(experiment: str) -> DownloadSettings:
             "filter_open_ocean", False
         ),
     )
-
-
-def _list_remote_files_with_sizes(
-    settings: DownloadSettings,
-) -> list[tuple[str, int | None]]:
-    """List remote NetCDF paths with their sizes in bytes."""
-    with FTP(settings.host, settings.user, settings.password) as ftp:
-        remote_files = [
-            path for path in ftp.nlst(settings.remote_dir) if path.endswith(".nc")
-        ]
-        ftp.voidcmd("TYPE I")
-        return [(path, ftp.size(path)) for path in remote_files]
 
 
 def filter_by_date_range(
@@ -139,6 +113,49 @@ def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
     return filtered
 
 
+def _list_remote_files_with_sizes(
+    settings: DownloadSettings,
+) -> list[tuple[str, int | None]]:
+    """List remote NetCDF paths with their sizes in bytes."""
+    with login_aviso(settings.host, settings.user, settings.password) as ftp:
+        remote_files = [
+            path for path in ftp.nlst(settings.remote_dir) if path.endswith(".nc")
+        ]
+        ftp.voidcmd("TYPE I")
+        return [(path, ftp.size(path)) for path in remote_files]
+
+
+def _download_one(remote_path: str, settings: DownloadSettings) -> str:
+    """Download and trim one file, or report that its output already exists."""
+    filename = Path(remote_path).name
+    local_path = settings.local_dir / filename
+
+    if local_path.exists():
+        return f"[skip] {filename}"
+
+    with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        with login_aviso(settings.host, settings.user, settings.password) as ftp:
+            ftp.cwd(settings.remote_dir)
+            with tmp_path.open("wb") as temp_file:
+                ftp.retrbinary(f"RETR {filename}", temp_file.write)
+        with _NETCDF_IO_LOCK:
+            _trim_file(
+                tmp_path,
+                local_path,
+                settings.longitude_range,
+                settings.latitude_range,
+                settings.filter_open_ocean,
+            )
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        return f"[ERROR] {filename}: {exc}"
+
+    return f"[done] {filename}"
+
+
 def _trim_file(
     raw_path: Path,
     out_path: Path,
@@ -164,43 +181,7 @@ def _trim_file(
     raw_path.unlink()
 
 
-def _download_one(remote_path: str, settings: DownloadSettings) -> str:
-    """Download and trim one file, or report that its output already exists."""
-    filename = Path(remote_path).name
-    local_path = settings.local_dir / filename
-
-    if local_path.exists():
-        return f"[skip] {filename}"
-
-    with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-
-    try:
-        with FTP(settings.host, settings.user, settings.password) as ftp:
-            ftp.cwd(settings.remote_dir)
-            with tmp_path.open("wb") as temp_file:
-                ftp.retrbinary(f"RETR {filename}", temp_file.write)
-        with _NETCDF_IO_LOCK:
-            _trim_file(
-                tmp_path,
-                local_path,
-                settings.longitude_range,
-                settings.latitude_range,
-                settings.filter_open_ocean,
-            )
-    except Exception as exc:
-        tmp_path.unlink(missing_ok=True)
-        return f"[ERROR] {filename}: {exc}"
-
-    return f"[done] {filename}"
-
-
-def main(experiment: str | None = None) -> None:
-    """Download configured SWOT files in parallel and trim them to the region."""
-    if experiment is None:
-        experiment = _parse_args().experiment
-    settings = _load_settings(experiment)
-
+def download_files(settings: DownloadSettings) -> list[str]:
     print("Listing remote files...")
     remote_files = _list_remote_files_with_sizes(settings)
     remote_files.sort(key=lambda item: Path(item[0]).name)
@@ -228,12 +209,26 @@ def main(experiment: str | None = None) -> None:
             print(result)
             if result.startswith("[ERROR]"):
                 failures.append(result)
+    return failures
 
+
+def main(experiment: str | None = None) -> None:
+    """Download configured SWOT files in parallel and trim them to the region."""
+    if experiment is None:
+        experiment = _parse_args().experiment
+
+    failures = download_files(load_settings(experiment))
     if failures:
         print(f"\n{len(failures)} files failed:")
         for message in failures:
             print(f"  {message}")
         raise SystemExit(1)
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("experiment")
+    return parser.parse_args()
 
 
 if __name__ == "__main__":

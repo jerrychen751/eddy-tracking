@@ -9,7 +9,7 @@ The pipeline ingests daily SWOT L4 SSH data, identifies and tracks mesoscale edd
 **Data sources:**
 - SWOT L4 SSH: AVISO FTP (`dt_global_allsat_phy_l4_*.nc`)
 - PACE OCI L3M Daily RRS: NASA Earthdata (`PACE_OCI_L3M_RRS`, 4 km)
-- SST: AQUA MODIS 8-day composites via earthaccess
+- SST: AQUA MODIS 8-day composites via earthaccess search and OPeNDAP
 - SSS: SMAP 8-day running mean via Harmony API
 
 ## Setup
@@ -66,14 +66,16 @@ downloads keyed by dataset, `silver/` is per-experiment processed stages, and
 ```text
 Bronze downloads
 ----------------
-download_swot.py
+python -m eddy_tracking.downloads.swot <experiment>
   -> data/{dataset}/bronze/swot_l4/*.nc
 
-download_pace.py
+python -m eddy_tracking.downloads.pace <experiment>
   -> data/{dataset}/bronze/pace_l3_8d/*.nc
 
-download_sst_sss.py
+python -m eddy_tracking.downloads.sst <experiment>
   -> data/{dataset}/bronze/sst/*.nc
+
+python -m eddy_tracking.downloads.sss <experiment>
   -> data/{dataset}/bronze/sss/*.nc
 
 
@@ -212,6 +214,8 @@ data/             per-experiment medallion layers (gitignored, regenerable):
                   pigments, pft, gulf_stream, eddy_dynamics)
     gold/         analysis-ready eddy-pigment table
 outputs/          legacy outputs from older experiments (pre-medallion)
+src/eddy_tracking/
+  downloads/      importable SWOT, PACE, SST, and SSS download modules
 utils/
   config.py       config loader, medallion path helpers, METADATA_COLS
   sdp/            SDP pigment model (Kramer et al. 2022)

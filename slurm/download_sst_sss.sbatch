@@ -10,10 +10,11 @@
 #SBATCH --time=06:00:00
 #SBATCH --output=logs/download_sst_sss_%j.log
 
-# Download SST (AQUA MODIS via earthaccess) and SSS (SMAP via Harmony).
+# Download SST (AQUA MODIS via OPeNDAP) and SSS (SMAP via Harmony).
 # Both are 8-day composites, so fewer files than daily products.
 
 cd ~/projects/eddy-tracking
 source .venv/bin/activate
 : "${EXPERIMENT:?EXPERIMENT env var is not set}"
-python -u download_sst_sss.py "$EXPERIMENT"
+python -u -m eddy_tracking.downloads.sst "$EXPERIMENT" &&
+    python -u -m eddy_tracking.downloads.sss "$EXPERIMENT"
