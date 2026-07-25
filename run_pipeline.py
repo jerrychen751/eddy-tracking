@@ -21,15 +21,6 @@ from datetime import datetime
 
 from utils.config import PROJECT_ROOT
 
-__all__ = [
-    "DEFAULT_STAGES",
-    "OPTIONAL_STAGES",
-    "PARALLEL_STAGES",
-    "VALID_STAGES",
-    "main",
-    "resolve_stages",
-]
-
 # Default stage order for the analysis-ready gold table.
 # Each name matches its script ({stage}.py).
 DEFAULT_STAGES = [
