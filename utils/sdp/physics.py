@@ -10,6 +10,11 @@ from scipy.optimize import fmin
 import pandas as pd
 from pathlib import Path
 
+
+class GSMInversionError(RuntimeError):
+    pass
+
+
 def RInw(
     lambda_: int | float | np.ndarray,
     Tc: int | float,
@@ -231,7 +236,10 @@ def gsm_invert(
     )
 
     if warnflag != 0:
-        raise RuntimeError(f"GSM inversion failed to converge (scipy.optimize.fmin warnflag={warnflag})")
+        raise GSMInversionError(
+            "GSM inversion failed to converge "
+            f"(scipy.optimize.fmin warnflag={warnflag})"
+        )
 
     return iops_opt
 

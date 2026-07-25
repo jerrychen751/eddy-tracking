@@ -28,6 +28,7 @@ from utils.config import load_config, resolve_data_dir, resolve_output_dir
 from utils.subset import load_rossby_field
 from utils.sdp import run_sdp
 from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
+from utils.sdp.physics import GSMInversionError
 from utils.sdp.preprocessing import preprocess_rrs_batch
 
 PET_EPOCH = dt.date(1950, 1, 1)
@@ -168,6 +169,40 @@ def in_any_contour(
     return inside
 
 
+def run_sdp_filtering_nonconvergent(
+    rrs: pd.DataFrame,
+    wavelengths: np.ndarray,
+    sst: np.ndarray,
+    sss: np.ndarray,
+) -> tuple[pd.DataFrame, int]:
+    try:
+        return run_sdp(rrs=rrs, wl=wavelengths, sst=sst, sss=sss), 0
+    except GSMInversionError:
+        if len(rrs) == 1:
+            return pd.DataFrame(columns=PIGMENTS), 1
+
+    midpoint = len(rrs) // 2
+    left, left_dropped = run_sdp_filtering_nonconvergent(
+        rrs.iloc[:midpoint].reset_index(drop=True),
+        wavelengths,
+        sst[:midpoint],
+        sss[:midpoint],
+    )
+    right, right_dropped = run_sdp_filtering_nonconvergent(
+        rrs.iloc[midpoint:].reset_index(drop=True),
+        wavelengths,
+        sst[midpoint:],
+        sss[midpoint:],
+    )
+    predictions = [frame for frame in (left, right) if not frame.empty]
+    return (
+        pd.concat(predictions, ignore_index=True)
+        if predictions
+        else pd.DataFrame(columns=PIGMENTS),
+        left_dropped + right_dropped,
+    )
+
+
 def compute_background_means(df: pd.DataFrame, sst_da, sss_da) -> dict | None:
     """
     Run the SDP model on background pixels and average each pigment.
@@ -190,14 +225,24 @@ def compute_background_means(df: pd.DataFrame, sst_da, sss_da) -> dict | None:
     if valid.sum() == 0:
         return None
 
-    pigments_df = run_sdp(
-        rrs=pd.DataFrame(rrs_processed[valid], columns=wl_processed.astype(int)),
-        wl=wl_processed,
-        sst=sst_vals[valid],
-        sss=sss_vals[valid],
+    rrs_frame = pd.DataFrame(
+        rrs_processed[valid], columns=wl_processed.astype(int)
     )
+    pigments_df, n_nonconvergent = run_sdp_filtering_nonconvergent(
+        rrs_frame,
+        wl_processed,
+        sst_vals[valid],
+        sss_vals[valid],
+    )
+    if n_nonconvergent:
+        print(
+            f"Dropped {n_nonconvergent}/{len(rrs_frame)} background pixels "
+            "whose GSM inversion did not converge"
+        )
+    if pigments_df.empty:
+        return None
     means = {f"bg_mean_{canon}": float(pigments_df[raw].mean()) for raw, canon in PIGMENTS.items()}
-    means["n_bg_pixels"] = int(valid.sum())
+    means["n_bg_pixels"] = len(pigments_df)
     return means
 
 
@@ -253,6 +298,7 @@ def main(
             wavelengths = ds.coords["wavelength"].values.astype(int)
             rrs = ds["Rrs"].values  # (lat, lon, wavelength)
 
+        lon2d, lat2d = np.meshgrid(pace_lon, pace_lat)
         calm = compute_calm_mask_on_pace(swot_fp, pace_lon, pace_lat)
         rrs_flat = rrs.reshape(-1, rrs.shape[-1])
         all_finite = np.all(np.isfinite(rrs_flat), axis=1)
