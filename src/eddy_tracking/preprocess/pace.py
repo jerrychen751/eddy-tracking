@@ -198,3 +198,64 @@ def _read_l2_flag_masks(flags: xr.DataArray) -> dict[str, int]:
         for name, mask in zip(names, unsigned_masks, strict=True)
         if name != "SPARE"
     }
+
+
+def read_multiple_pace_l2(
+    paths: Sequence[Path | str],
+    *,
+    line_indexer: _DimensionIndexer | None = None,
+    pixel_indexer: _DimensionIndexer | None = None,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    source_files: list[str] = []
+    product_names: list[str] = []
+    processing_versions: list[str | None] = []
+    expected_columns: pd.Index | None = None
+    shared_attrs: dict[str, object] = {}
+    shared_attr_names = (
+        "units",
+        "wavelengths_nm",
+        "rrs_columns",
+        "rrs_unc_columns",
+        "l2_flag_masks",
+    )
+
+    for path in paths:
+        frame = read_pace_l2(
+            path,
+            line_indexer=line_indexer,
+            pixel_indexer=pixel_indexer,
+        )
+        if expected_columns is None:
+            expected_columns = frame.columns
+            shared_attrs = {
+                name: frame.attrs[name] for name in shared_attr_names
+            }
+        else:
+            if not frame.columns.equals(expected_columns):
+                raise ValueError(
+                    f"{path} has data columns that do not match the first file"
+                )
+            for name in shared_attr_names:
+                if frame.attrs[name] != shared_attrs[name]:
+                    raise ValueError(
+                        f"{path} has {name} metadata that does not match "
+                        "the first file"
+                    )
+
+        source_file = frame.attrs["source_file"]
+        source_files.append(source_file)
+        product_names.append(frame.attrs["product_name"])
+        processing_versions.append(frame.attrs["processing_version"])
+        frame.insert(0, "source_file", source_file)
+        frames.append(frame)
+
+    if not frames:
+        raise ValueError("paths must contain at least one PACE Level-2 file")
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined.attrs = shared_attrs
+    combined.attrs["source_files"] = tuple(source_files)
+    combined.attrs["product_names"] = tuple(product_names)
+    combined.attrs["processing_versions"] = tuple(processing_versions)
+    return combined

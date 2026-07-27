@@ -1,18 +1,20 @@
-"""
-Module to find and download PACE L2 granules.
-"""
+"""List PACE Level-2, SST, and SSS matchup granules."""
 
 from datetime import datetime, timedelta, timezone
 
 import earthaccess
 from earthaccess import DataGranule
 
-PACE_COLLECTION_SHORT_NAME = "PACE_OCI_L2_AOP"
-PACE_VERSION = "3.2"
+PACE_L2_COLLECTION_SHORT_NAME = "PACE_OCI_L2_AOP"
+PACE_L2_VERSION = "3.2"
+SSS_COLLECTION_CONCEPT_ID = "C2208422957-POCLOUD"
+SSS_GRANULE_NAME = "SMAP_L3_SSS_*_8DAYS_V5.0"
+SST_COLLECTION_CONCEPT_ID = "C1615905770-OB_DAAC"
+SST_GRANULE_NAME = "AQUA_MODIS.*.L3m.8D.SST.sst.4km.nc"
 MATCHUP_TIME_WINDOW = timedelta(hours=3)
 
 
-def list_matchup_granules(
+def list_pace_l2_matchups(
     lon: float,
     lat: float,
     measurement_dttm: datetime,
@@ -24,6 +26,61 @@ def list_matchup_granules(
 
     Requires `measurement_dttm` to have a timezone.
     """
+    return _list_matchups(
+        lon,
+        lat,
+        measurement_dttm,
+        matchup_window,
+        count,
+        short_name=PACE_L2_COLLECTION_SHORT_NAME,
+        version=PACE_L2_VERSION,
+    )
+
+
+def list_sss_matchups(
+    lon: float,
+    lat: float,
+    measurement_dttm: datetime,
+    matchup_window: timedelta,
+    count: int | None = None,
+) -> list[DataGranule]:
+    return _list_matchups(
+        lon,
+        lat,
+        measurement_dttm,
+        matchup_window,
+        count,
+        concept_id=SSS_COLLECTION_CONCEPT_ID,
+        granule_name=SSS_GRANULE_NAME,
+    )
+
+
+def list_sst_matchups(
+    lon: float,
+    lat: float,
+    measurement_dttm: datetime,
+    matchup_window: timedelta,
+    count: int | None = None,
+) -> list[DataGranule]:
+    return _list_matchups(
+        lon,
+        lat,
+        measurement_dttm,
+        matchup_window,
+        count,
+        concept_id=SST_COLLECTION_CONCEPT_ID,
+        granule_name=SST_GRANULE_NAME,
+    )
+
+
+def _list_matchups(
+    lon: float,
+    lat: float,
+    measurement_dttm: datetime,
+    matchup_window: timedelta,
+    count: int | None,
+    **collection_query: str,
+) -> list[DataGranule]:
     if measurement_dttm.tzinfo is None:
         raise ValueError("measurement_dttm must have timezone information")
 
@@ -34,9 +91,8 @@ def list_matchup_granules(
     max_returned = count if isinstance(count, int) else -1
 
     return earthaccess.search_data(
-        short_name=PACE_COLLECTION_SHORT_NAME,
-        version=PACE_VERSION,
         point=(lon, lat),
         temporal=(start_time, end_time),
         count=max_returned,
+        **collection_query,
     )
