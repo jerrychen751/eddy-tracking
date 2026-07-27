@@ -65,8 +65,12 @@ def identify_one(
     if anticyclone_output_path.exists() and cyclone_output_path.exists():
         return anticyclone_output_path, cyclone_output_path
 
-    from utils.py_eddy_tracker.dataset.grid import RegularGridDataset
-    from utils.py_eddy_tracker.observations.observation import EddiesObservations
+    from eddy_tracking.packages.py_eddy_tracker.dataset.grid import (
+        RegularGridDataset,
+    )
+    from eddy_tracking.packages.py_eddy_tracker.observations.observation import (
+        EddiesObservations,
+    )
 
     # Read coordinates first to compute index slices, then re-open via
     # RegularGridDataset. The double open is necessary because PET's

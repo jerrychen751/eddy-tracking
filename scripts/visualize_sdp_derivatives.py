@@ -24,13 +24,11 @@ def main() -> None:
     sys.path.insert(0, repo_path)
     try:
         from utils.config import load_config, resolve_data_dir, resolve_output_dir
-        from utils.sdp.ancillary import (
-            load_sss_dataset,
-            load_sst_dataset,
-            sample_ancillary,
-        )
-        from utils.sdp.physics import get_rrs_residuals
-        from utils.sdp.preprocessing import preprocess_rrs_batch
+        from eddy_tracking.packages.sdp.ancillary import sample_ancillary
+        from eddy_tracking.packages.sdp.physics import get_rrs_residuals
+        from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
+        from eddy_tracking.preprocess.sss import read_multiple_sss
+        from eddy_tracking.preprocess.sst import read_multiple_sst
     finally:
         sys.path.remove(repo_path)
 
@@ -52,8 +50,8 @@ def main() -> None:
     wl_proc, rrs_proc = preprocess_rrs_batch(wavelengths, rrs_native)
 
     print("Loading SST/SSS grids...")
-    sst_da = load_sst_dataset(sst_dir)
-    sss_da = load_sss_dataset(sss_dir)
+    sst_df = read_multiple_sst(sst_dir)
+    sss_df = read_multiple_sss(sss_dir)
 
     # Sample SST/SSS at the eddy-mean location and the median date, since
     # we've averaged across the whole eddy's coverage period.
@@ -61,7 +59,7 @@ def main() -> None:
     center_lat = float(df["pixel_lat"].mean())
     median_date = df["date"].sort_values().iloc[len(df) // 2]
     sst, sss = sample_ancillary(
-        sst_da, sss_da,
+        sst_df, sss_df,
         lons=np.array([center_lon]),
         lats=np.array([center_lat]),
         times=np.array([pd.to_datetime(median_date)]),

@@ -22,14 +22,18 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from matplotlib.path import Path as MplPath
-from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
+from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
+    TrackEddiesObservations,
+)
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
-from utils.subset import load_rossby_field
-from utils.sdp import run_sdp
-from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
-from utils.sdp.physics import GSMInversionError
-from utils.sdp.preprocessing import preprocess_rrs_batch
+from eddy_tracking.utils.subset import load_rossby_field
+from eddy_tracking.packages.sdp import run_sdp
+from eddy_tracking.packages.sdp.ancillary import sample_ancillary
+from eddy_tracking.packages.sdp.physics import GSMInversionError
+from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
+from eddy_tracking.preprocess.sss import read_multiple_sss
+from eddy_tracking.preprocess.sst import read_multiple_sst
 
 PET_EPOCH = dt.date(1950, 1, 1)
 # The DUACS/MIOST source variable is named relative_vorticity, but these files
@@ -203,7 +207,11 @@ def run_sdp_filtering_nonconvergent(
     )
 
 
-def compute_background_means(df: pd.DataFrame, sst_da, sss_da) -> dict | None:
+def compute_background_means(
+    df: pd.DataFrame,
+    sst_df: pd.DataFrame,
+    sss_df: pd.DataFrame,
+) -> dict | None:
     """
     Run the SDP model on background pixels and average each pigment.
 
@@ -216,7 +224,8 @@ def compute_background_means(df: pd.DataFrame, sst_da, sss_da) -> dict | None:
     wl_processed, rrs_processed = preprocess_rrs_batch(wavelengths, df[rrs_cols].values)
 
     sst_vals, sss_vals = sample_ancillary(
-        sst_da, sss_da,
+        sst_df,
+        sss_df,
         lons=df["pixel_lon"].values,
         lats=df["pixel_lat"].values,
         times=pd.to_datetime(df["date"]).values,
@@ -271,8 +280,8 @@ def main(
     swot_files = index_swot_files_by_date(swot_dir)
     eddy_contours = load_eddy_contours(cyclone_track_dir, anticyclone_track_dir)
     print("Loading SST/SSS grids...")
-    sst_da = load_sst_dataset(sst_dir)
-    sss_da = load_sss_dataset(sss_dir)
+    sst_df = read_multiple_sst(sst_dir)
+    sss_df = read_multiple_sss(sss_dir)
 
     pace_files = sorted(pace_dir.glob("*.nc"))
     if limit:
@@ -337,7 +346,7 @@ def main(
         rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w}" for w in wavelengths])
         df = pd.concat([df, rrs_df], axis=1)
 
-        means = compute_background_means(df, sst_da, sss_da)
+        means = compute_background_means(df, sst_df, sss_df)
         if means is None:
             print(f"{repr_date}: no valid pixels after SST/SSS filter, skipping")
             continue

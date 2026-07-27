@@ -241,7 +241,9 @@ def load_track_observations(
 
     Columns: polarity, track_id, date, center_lon (-180/180), center_lat.
     """
-    from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
+    from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
+        TrackEddiesObservations,
+    )
 
     frames = []
     for polarity, track_dir in [

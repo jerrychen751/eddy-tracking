@@ -17,9 +17,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-from utils.phytoclass.cluster import cluster_samples
-from utils.phytoclass.matrix_checks import matrix_checks
-from utils.phytoclass.simulated_annealing import simulated_annealing
+from eddy_tracking.packages.phytoclass.cluster import cluster_samples
+from eddy_tracking.packages.phytoclass.matrix_checks import matrix_checks
+from eddy_tracking.packages.phytoclass.simulated_annealing import simulated_annealing
 
 
 SDP_TO_INTERNAL: dict[str, str] = {

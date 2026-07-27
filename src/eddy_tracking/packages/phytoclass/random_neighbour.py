@@ -7,7 +7,7 @@ retries any values that land out of bounds, then runs NNLS_MF on the new F.
 
 import numpy as np
 
-from utils.phytoclass.nnls_mf import nnls_mf
+from eddy_tracking.packages.phytoclass.nnls_mf import nnls_mf
 
 
 def random_neighbour(

@@ -28,8 +28,10 @@ from utils.config import (
     resolve_data_dir,
     resolve_output_dir,
 )
-from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
-from utils.subset import in_subset, parse_date_range
+from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
+    TrackEddiesObservations,
+)
+from eddy_tracking.utils.subset import in_subset, parse_date_range
 
 PET_EPOCH = dt.date(1950, 1, 1)
 PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\.")

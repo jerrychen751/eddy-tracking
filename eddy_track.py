@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 
 from utils.config import load_config, resolve_output_dir
-from utils.py_eddy_tracker.tracking import Correspondances
+from eddy_tracking.packages.py_eddy_tracker.tracking import Correspondances
 
 
 def _remove_path(path: Path) -> None:

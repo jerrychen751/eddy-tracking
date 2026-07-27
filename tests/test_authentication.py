@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from eddy_tracking import authentication
+from eddy_tracking.utils import authentication
 
 
 def test_login_earthdata_delegates_to_earthaccess(

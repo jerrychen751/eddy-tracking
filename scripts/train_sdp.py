@@ -2,8 +2,9 @@
 Train the SDP pigments model and write coefficient CSVs.
 
 Fits the Kramer et al. (2022) PCA + regression model for 13 pigments and
-saves per-pigment ensemble coefficients to `utils/sdp/coefficients/`, which
-`utils.sdp.prediction.run_sdp` then loads at inference time.
+saves per-pigment ensemble coefficients to
+`src/eddy_tracking/packages/sdp/coefficients/`, which
+`eddy_tracking.packages.sdp.prediction.run_sdp` then loads at inference time.
 """
 
 import time
@@ -349,7 +350,8 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
 
     Takes 2nd derivative of Rrs residuals, trains model for all 13 pigments using
     100 permutations, 30 max PCs, 5-fold CV, MAE metric. Saves A (wavelength coefficients,
-    shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in utils/sdp/coefficients/.
+    shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in
+    src/eddy_tracking/packages/sdp/coefficients/.
     """
 
     # Use the 2nd derivative of the residual as model input
@@ -372,7 +374,14 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
     start = time.time()
 
     # Coefficient output directory lives in the inference package so run_sdp can load them
-    output_dir = Path(__file__).resolve().parent.parent / "utils" / "sdp" / "coefficients"
+    output_dir = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "eddy_tracking"
+        / "packages"
+        / "sdp"
+        / "coefficients"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Start modelling

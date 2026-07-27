@@ -10,7 +10,7 @@ with public steepest_descent().
 
 import numpy as np
 
-from utils.phytoclass.nnls_mf import nnls_mf
+from eddy_tracking.packages.phytoclass.nnls_mf import nnls_mf
 
 
 SCALERS = {

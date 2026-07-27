@@ -10,7 +10,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 
 from utils.config import (
     METADATA_COLS,
@@ -18,16 +17,18 @@ from utils.config import (
     resolve_data_dir,
     resolve_output_dir,
 )
-from utils.sdp import run_sdp
-from utils.sdp.ancillary import load_sst_dataset, load_sss_dataset, sample_ancillary
-from utils.sdp.preprocessing import preprocess_rrs_batch
+from eddy_tracking.packages.sdp import run_sdp
+from eddy_tracking.packages.sdp.ancillary import sample_ancillary
+from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
+from eddy_tracking.preprocess.sss import read_multiple_sss
+from eddy_tracking.preprocess.sst import read_multiple_sst
 
 
 def process_eddy(
     rrs_path: Path,
     out_path: Path,
-    sst_data: xr.DataArray,
-    sss_data: xr.DataArray,
+    sst_df: pd.DataFrame,
+    sss_df: pd.DataFrame,
 ) -> bool:
     """
     Write pigments for one eddy unless output exists or ancillary data is absent.
@@ -51,8 +52,8 @@ def process_eddy(
     )
 
     sst_values, sss_values = sample_ancillary(
-        sst_data,
-        sss_data,
+        sst_df,
+        sss_df,
         lons=observations["pixel_lon"].values,
         lats=observations["pixel_lat"].values,
         times=pd.to_datetime(observations["date"]).values,
@@ -111,8 +112,8 @@ def main(experiment: str | None = None) -> None:
     sss_dir = resolve_data_dir(cfg, "sss_dir")
 
     print("Loading SST/SSS grids...")
-    sst_data = load_sst_dataset(sst_dir)
-    sss_data = load_sss_dataset(sss_dir)
+    sst_df = read_multiple_sst(sst_dir)
+    sss_df = read_multiple_sss(sss_dir)
 
     n_written = 0
     for polarity in ("cyclone", "anticyclone"):
@@ -129,7 +130,7 @@ def main(experiment: str | None = None) -> None:
             out_path = out_dir / rrs_path.name.replace(
                 "_rrs.parquet", "_pigments.parquet"
             )
-            if process_eddy(rrs_path, out_path, sst_data, sss_data):
+            if process_eddy(rrs_path, out_path, sst_df, sss_df):
                 n_written += 1
 
     print(f"Done. {n_written} pigment files written.")

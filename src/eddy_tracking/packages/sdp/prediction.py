@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from utils.sdp.physics import get_rrs_residuals
+from eddy_tracking.packages.sdp.physics import get_rrs_residuals
 import pandas as pd
 import numpy as np
 

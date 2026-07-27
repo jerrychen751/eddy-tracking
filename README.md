@@ -216,10 +216,13 @@ data/             per-experiment medallion layers (gitignored, regenerable):
 outputs/          legacy outputs from older experiments (pre-medallion)
 src/eddy_tracking/
   downloads/      importable SWOT, PACE, SST, and SSS download modules
+  packages/
+    sdp/          SDP pigment model (Kramer et al. 2022)
+    phytoclass/   phytoclass PFT decomposition (Hayward et al. 2023)
+    py_eddy_tracker/
+                  vendored eddy identification and tracking package
 utils/
   config.py       config loader, medallion path helpers, METADATA_COLS
-  sdp/            SDP pigment model (Kramer et al. 2022)
-  phytoclass/     phytoclass PFT decomposition (Hayward et al. 2023)
 notebooks/        exploratory analysis
 slurm/            HPC job scripts
 todo/hypotheses/  research hypotheses and visualization tasks

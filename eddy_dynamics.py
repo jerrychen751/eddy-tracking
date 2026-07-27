@@ -18,7 +18,7 @@ from matplotlib.path import Path as MplPath
 from scipy.interpolate import RegularGridInterpolator
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
-from utils.subset import load_rossby_field
+from eddy_tracking.utils.subset import load_rossby_field
 
 PET_EPOCH = dt.date(1950, 1, 1)
 SWOT_DATE_RE = re.compile(r"\d{8}")
@@ -76,7 +76,9 @@ def track_observations_to_frame(tracked, polarity: str) -> pd.DataFrame:
 
 def load_track_observations(experiment: str) -> pd.DataFrame:
     """Load non-virtual track observations for both polarities."""
-    from utils.py_eddy_tracker.observations.tracking import TrackEddiesObservations
+    from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
+        TrackEddiesObservations,
+    )
 
     frames = []
     for polarity in ("cyclone", "anticyclone"):

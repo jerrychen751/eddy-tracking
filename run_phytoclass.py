@@ -21,7 +21,7 @@ from utils.config import (
     resolve_config_file,
     resolve_output_dir,
 )
-from utils.phytoclass import run_phytoclass
+from eddy_tracking.packages.phytoclass import run_phytoclass
 
 
 @dataclass(frozen=True)

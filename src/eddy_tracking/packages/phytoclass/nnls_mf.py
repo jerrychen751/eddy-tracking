@@ -14,7 +14,7 @@ all samples simultaneously.
 
 import numpy as np
 
-from utils.phytoclass.util import (
+from eddy_tracking.packages.phytoclass.util import (
     apply_weights,
     normalise_F,
 )

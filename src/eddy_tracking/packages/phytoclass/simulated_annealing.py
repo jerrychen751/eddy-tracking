@@ -9,11 +9,11 @@ differ because the random draws differ.
 import numpy as np
 import pandas as pd
 
-from utils.phytoclass.matrix_checks import matrix_checks
-from utils.phytoclass.nnls_mf import nnls_mf, nnls_mf_final
-from utils.phytoclass.random_neighbour import random_neighbour
-from utils.phytoclass.steepest_descent import steepest_descent
-from utils.phytoclass.util import (
+from eddy_tracking.packages.phytoclass.matrix_checks import matrix_checks
+from eddy_tracking.packages.phytoclass.nnls_mf import nnls_mf, nnls_mf_final
+from eddy_tracking.packages.phytoclass.random_neighbour import random_neighbour
+from eddy_tracking.packages.phytoclass.steepest_descent import steepest_descent
+from eddy_tracking.packages.phytoclass.util import (
     bounded_weights,
     default_min_max,
     normalise_S,

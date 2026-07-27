@@ -8,7 +8,7 @@ import re
 import shutil
 from pathlib import Path
 
-from eddy_tracking.authentication import login_harmony
+from eddy_tracking.utils.authentication import login_harmony
 
 
 def strip_harmony_prefix(filename: str) -> str:
