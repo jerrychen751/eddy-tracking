@@ -15,7 +15,6 @@ from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
 
 # Coefficient directory located alongside this module
 _COEFF_DIR = Path(__file__).resolve().parent / "coefficients"
-# Display names for output DataFrame columns
 _PIGMENT_DISPLAY_NAMES = {
     "Tchla": "T chla",
     "Zea": "Zea",
@@ -98,7 +97,6 @@ def run_sdp(
     for p, name in enumerate(sdp_names):
         print(f"Predicting {name} ({p+1}/{len(sdp_names)})...")
 
-        # Load coefficient files (already verified to exist above)
         a_coefs, c_coefs = _load_coefficients(name)
 
         # Matrix multiplication to compute all runs at once for all samples
@@ -134,8 +132,9 @@ def run_sdp_on_pace_l2(
     """
     Predict 13 pigments for each PACE Level-2 pixel.
 
-    The result preserves all input rows and columns. It adds SST, SSS, pigment
-    values, and `sdp_status`. Invalid inputs keep missing pigment values.
+    The result preserves all input rows and columns.
+    It adds sea surface temperature (SST), sea surface salinity (SSS), pigment values, and `sdp_status`.
+    Invalid inputs keep missing pigment values.
     """
     wavelengths_nm, rrs_columns = _read_pace_spectral_schema(pace_pixels)
     required_columns = ("datetime", "latitude", "longitude")
