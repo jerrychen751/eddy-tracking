@@ -34,8 +34,8 @@ from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
 from eddy_tracking.utils.subset import in_subset, parse_date_range
 
 PET_EPOCH = dt.date(1950, 1, 1)
-PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\.")
-PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
+PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.")
+PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
 
 
 class EddyObs(NamedTuple):

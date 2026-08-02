@@ -1,7 +1,11 @@
 """
-Download PACE OCI L3 mapped Rrs files.
+Download PACE OCI L3 mapped files.
 
 OB.DAAC OPenDAP provides server-side subsetting.
+
+The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc,
+pic, and carbon_phyto. Both use the same granule naming and the same OB.DAAC
+collection pattern, so one download path serves them.
 """
 
 from __future__ import annotations
@@ -20,11 +24,6 @@ from eddy_tracking.utils.authentication import (
 )
 
 
-GRANULE_RE = {
-    "DAY": re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\..*\.Rrs\.4km\.nc"),
-    "8D": re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\..*\.Rrs\.4km\.nc"),
-}
-
 # OB.DAAC Hyrax OPeNDAP root for PACE L3 mapped products, used to build a URL
 # when a granule's CMR metadata omits its OPENDAP DATA link (see download loop).
 _DOWNLOAD_BASE_URL = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
@@ -33,14 +32,20 @@ _DOWNLOAD_BASE_URL = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI
 def search_pace_l3_granules(
     date_range: tuple[str, str],
     temporal_res: str = "DAY",
+    product: str = "AOP",
 ) -> dict[str, tuple[str, object]]:
     """
-    Search CMR for PACE L3 Rrs granules in a date range and filter to
+    Search CMR for PACE L3 granules of one product in a date range and filter to
     matching temporal resolution and 4km. Returns {date_key: (filename, granule)}.
     """
-    regex = GRANULE_RE[temporal_res]
+    # The version segment stays open so a new reprocessing does not break the match.
+    granule_pattern = {
+        "DAY": r"PACE_OCI\.(\d{{8}})\.L3m\.DAY\.{product}\..*\.4km\.nc",
+        "8D": r"PACE_OCI\.(\d{{8}})_(\d{{8}})\.L3m\.8D\.{product}\..*\.4km\.nc",
+    }[temporal_res]
+    regex = re.compile(granule_pattern.format(product=product))
     results = earthaccess.search_data(
-        short_name="PACE_OCI_L3M_RRS",
+        short_name=f"PACE_OCI_L3M_{product}",
         temporal=(date_range[0], date_range[1]),
         count=5000,
     )
@@ -85,9 +90,10 @@ def download_pace_l3(
     lat_range: tuple[float, float],
     out_dir: Path,
     temporal_res: str = "DAY",
+    product: str = "AOP",
 ) -> tuple[int, int, int]:
     """
-    Search + download PACE L3 Rrs granules matching date_range and temporal_res.
+    Search + download PACE L3 granules matching date_range, temporal_res, and product.
     Skips files already in out_dir. Returns (saved, skipped, errors).
     """
     login_earthdata()
@@ -95,8 +101,8 @@ def download_pace_l3(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    matches = search_pace_l3_granules(date_range, temporal_res)
-    print(f"Matched {len(matches)} {temporal_res} 4km granules")
+    matches = search_pace_l3_granules(date_range, temporal_res, product)
+    print(f"Matched {len(matches)} {temporal_res} {product} 4km granules")
 
     saved = skipped = errors = 0
     for date_key, (filename, granule) in sorted(matches.items()):

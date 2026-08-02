@@ -42,8 +42,8 @@ PET_EPOCH = dt.date(1950, 1, 1)
 BG_THRESHOLD_ROSSBY = 0.1
 # Search this many days on either side of a composite's midpoint for a SWOT day.
 SWOT_SEARCH_DAYS = 4
-PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
-PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.RRS\.")
+PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
+PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.")
 SWOT_DATE_RE = re.compile(r"\d{8}")
 
 # on-disk SDP pigment name -> canonical suffix (must match build_gold_table.PIGMENTS)
