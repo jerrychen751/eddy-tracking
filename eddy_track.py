@@ -35,10 +35,19 @@ def track(
     polarity = track_dir.name
     identification_files = sorted(id_dir.glob("*.nc"))
     if not identification_files:
-        print(f"[{polarity}] No .nc files found in {id_dir}, skipping")
+        print(
+            f"polarity: {polarity}\n"
+            "status: skipped\n"
+            "reason: no_nc_files\n"
+            f"input_dir: {id_dir}"
+        )
         return
 
-    print(f"[{polarity}] Tracking {len(identification_files)} daily files...")
+    print(
+        f"polarity: {polarity}\n"
+        "status: tracking\n"
+        f"daily_files: {len(identification_files)}"
+    )
 
     correspondences = Correspondances(
         datasets=identification_files,
@@ -69,7 +78,11 @@ def track(
     # Preserve the current output until its replacement is fully written.
     _remove_path(output_path)
     temporary_path.rename(output_path)
-    print(f"[{polarity}] Wrote {output_path}")
+    print(
+        f"polarity: {polarity}\n"
+        f"output_path: {output_path}\n"
+        "status: written"
+    )
 
 
 def _parse_args() -> argparse.Namespace:

@@ -45,7 +45,10 @@ def download_smap_sss_8d(
 
     from harmony import BBox, Collection, Request
 
-    print("Downloading SSS (SMAP L3 8-day running mean)")
+    print(
+        "status: downloading_sss\n"
+        "product: smap_l3_8_day_running_mean"
+    )
     client = login_harmony()
     collection = Collection(id=collection_id)
 
@@ -70,7 +73,13 @@ def download_smap_sss_8d(
     try:
         for i, (win_start, win_end) in enumerate(windows, 1):
             label = win_start.strftime("%Y-%m")
-            print(f"[{i}/{len(windows)}] {label} ({win_start.date()} to {win_end.date()})")
+            print(
+                f"window: {i}\n"
+                f"total_windows: {len(windows)}\n"
+                f"month: {label}\n"
+                f"start_date: {win_start.date()}\n"
+                f"end_date: {win_end.date()}"
+            )
 
             request = Request(
                 collection=collection,
@@ -88,7 +97,10 @@ def download_smap_sss_8d(
                 )
                 raw_files = [Path(f.result()) for f in futures]
             except Exception as exc:
-                print(f"Error: {exc}")
+                print(
+                    "status: error\n"
+                    f"error: {exc}"
+                )
                 failed += 1
                 continue
 
@@ -132,7 +144,11 @@ def main(experiment: str | None = None) -> None:
         ],
     )
 
-    print(f"Done. {n_saved} SSS files saved.")
+    print(
+        "status: download_finished\n"
+        f"sss_files_saved: {n_saved}\n"
+        f"windows_failed: {n_failed}"
+    )
     if n_failed:
         raise SystemExit(f"{n_failed} SSS window(s) failed to download")
 

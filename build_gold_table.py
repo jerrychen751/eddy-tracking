@@ -175,10 +175,16 @@ def main(experiment: str | None = None) -> None:
 
     eddy_days = aggregate_eddy_days(experiment)
     if eddy_days.empty:
-        print("No eddy pigment files found; nothing to assemble.")
+        print(
+            "status: skipped\n"
+            "reason: no_eddy_pigment_files"
+        )
         return
     n_eddies = len(eddy_days[["polarity", "track_id"]].drop_duplicates())
-    print(f"Aggregated {len(eddy_days)} eddy-days from {n_eddies} eddies")
+    print(
+        f"eddy_days_aggregated: {len(eddy_days)}\n"
+        f"eddies: {n_eddies}"
+    )
 
     n_before = len(eddy_days)
     eddy_days = eddy_days[
@@ -187,8 +193,8 @@ def main(experiment: str | None = None) -> None:
     n_dropped = n_before - len(eddy_days)
     if n_dropped:
         print(
-            f"Dropped {n_dropped} eddy-days with < {MIN_EDDY_PIXELS} "
-            "interior pixels"
+            f"eddy_days_dropped: {n_dropped}\n"
+            f"minimum_interior_pixels: {MIN_EDDY_PIXELS}"
         )
 
     track_observations, track_lifetimes = build_track_features(experiment)
@@ -229,11 +235,12 @@ def main(experiment: str | None = None) -> None:
             by=["polarity", "track_id"],
             direction="nearest",
         )
-        print("Joined Rossby diagnostics from eddy_dynamics")
+        print("rossby_diagnostics: joined")
     else:
         print(
-            f"(no eddy dynamics files at {dynamics_dir} yet - "
-            "Rossby diagnostics skipped)"
+            "rossby_diagnostics: skipped\n"
+            "reason: no_eddy_dynamics_files\n"
+            f"dynamics_dir: {dynamics_dir}"
         )
 
     movement = pd.read_parquet(gulf_stream_dir / "eddy_movement.parquet")
@@ -277,20 +284,23 @@ def main(experiment: str | None = None) -> None:
             [np.inf, -np.inf], np.nan
         )
         print(
-            "Joined background means; computed log-ratio targets "
-            f"({n_nonfinite} non-finite set to NaN)"
+            "background_means: joined\n"
+            "log_ratio_targets: computed\n"
+            f"nonfinite_values_set_to_nan: {n_nonfinite}"
         )
     else:
         print(
-            f"(no background means at {background_path} yet - "
-            "log-ratio targets skipped)"
+            "log_ratio_targets: skipped\n"
+            "reason: no_background_means\n"
+            f"background_path: {background_path}"
         )
 
     out_path = resolve_gold_dir(experiment, "eddy_pigment_table.parquet")
     eddy_days.to_parquet(out_path, index=False)
     print(
-        f"Wrote {out_path}  "
-        f"({len(eddy_days)} rows x {len(eddy_days.columns)} cols)"
+        f"output_path: {out_path}\n"
+        f"rows_written: {len(eddy_days)}\n"
+        f"columns_written: {len(eddy_days.columns)}"
     )
 
 

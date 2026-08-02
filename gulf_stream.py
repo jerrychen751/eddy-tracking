@@ -281,7 +281,10 @@ def main(experiment: str | None = None) -> None:
 
     # Per-date streamline from every SWOT day
     swot_files = sorted(swot_dir.glob("*.nc"))
-    print(f"Computing Gulf Stream streamline for {len(swot_files)} SWOT days...")
+    print(
+        "status: computing_gulf_stream_streamline\n"
+        f"swot_days: {len(swot_files)}"
+    )
     streamline_rows = []
     centerline_by_date: dict[dt.date, GulfStreamCenterline] = {}
     for fp in swot_files:
@@ -292,7 +295,11 @@ def main(experiment: str | None = None) -> None:
     streamline_df = pd.concat(streamline_rows, ignore_index=True)
     streamline_df["date"] = pd.to_datetime(streamline_df["date"])
     streamline_df.to_parquet(out_dir / "streamline.parquet", index=False)
-    print(f"Wrote streamline.parquet: median centerline latitude {streamline_df['lat'].median():.2f} N")
+    print(
+        "output_file: streamline.parquet\n"
+        "median_centerline_latitude_degrees_north: "
+        f"{streamline_df['lat'].median():.2f}"
+    )
 
     # Movement per track: side of the streamline at birth vs death
     obs = load_track_observations(cyclone_track_dir, anticyclone_track_dir)
@@ -314,7 +321,11 @@ def main(experiment: str | None = None) -> None:
     movement_df = pd.DataFrame(movement_rows)
     movement_df.to_parquet(out_dir / "eddy_movement.parquet", index=False)
     counts = movement_df["movement"].replace("", "unknown").value_counts().to_dict()
-    print(f"Wrote eddy_movement.parquet: {len(movement_df)} tracks, classes {counts}")
+    print(
+        "output_file: eddy_movement.parquet\n"
+        f"tracks_written: {len(movement_df)}\n"
+        f"movement_classes: {counts}"
+    )
 
 
 def _classify_streamline_side(centerline_by_date, row) -> tuple[float, str]:

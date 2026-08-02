@@ -162,7 +162,10 @@ def write_dynamics(experiment: str, dynamics: pd.DataFrame) -> None:
         out_dir = resolve_output_dir(experiment, "eddy_dynamics", polarity)
         out = dynamics[dynamics["polarity"] == polarity].copy()
         out.to_parquet(out_dir / "dynamics.parquet", index=False)
-        print(f"Wrote {out_dir / 'dynamics.parquet'}  ({len(out)} rows)")
+        print(
+            f"output_path: {out_dir / 'dynamics.parquet'}\n"
+            f"rows_written: {len(out)}"
+        )
 
 
 def main(experiment: str | None = None) -> None:
@@ -176,7 +179,10 @@ def main(experiment: str | None = None) -> None:
     cfg = load_config(experiment)
     swot_files = index_swot_files_by_date(resolve_data_dir(cfg, "swot_dir"))
     obs = load_track_observations(experiment)
-    print(f"Computing Rossby diagnostics for {len(obs)} eddy observations...")
+    print(
+        "status: computing_rossby_diagnostics\n"
+        f"eddy_observations: {len(obs)}"
+    )
     dynamics = build_dynamics(obs, swot_files)
     write_dynamics(experiment, dynamics)
 

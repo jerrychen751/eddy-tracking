@@ -45,11 +45,15 @@ def main() -> None:
     rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
     wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
     rrs_native = df[rrs_cols].values.mean(axis=0, keepdims=True)
-    print(f"Pooled {len(df)} pixels across {len(rrs_files)} cyclones, {df['date'].nunique()} unique dates")
+    print(
+        f"pooled_pixels: {len(df)}\n"
+        f"cyclones: {len(rrs_files)}\n"
+        f"unique_dates: {df['date'].nunique()}"
+    )
 
     wl_proc, rrs_proc = preprocess_rrs_batch(wavelengths, rrs_native)
 
-    print("Loading SST/SSS grids...")
+    print("status: loading_sst_sss_grids")
     sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
     sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
@@ -64,7 +68,12 @@ def main() -> None:
         lats=np.array([center_lat]),
         times=np.array([pd.to_datetime(median_date)]),
     )
-    print(f"Location: ({center_lat:.2f} N, {center_lon:.2f} E), SST={sst[0]:.2f} C, SSS={sss[0]:.2f} PSU")
+    print(
+        f"latitude_degrees_north: {center_lat:.2f}\n"
+        f"longitude_degrees_east: {center_lon:.2f}\n"
+        f"sst_celsius: {sst[0]:.2f}\n"
+        f"sss_psu: {sss[0]:.2f}"
+    )
 
     wl_int = wl_proc.astype(int)
     rrs_df = pd.DataFrame(rrs_proc, columns=wl_int)
@@ -135,7 +144,10 @@ def main() -> None:
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUTPUT_PATH, dpi=160)
-    print(f"Wrote {OUTPUT_PATH}")
+    print(
+        f"output_path: {OUTPUT_PATH}\n"
+        "status: written"
+    )
 
 
 if __name__ == "__main__":

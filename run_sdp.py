@@ -36,7 +36,10 @@ def process_eddy(
     Returns ``True`` only when a new Parquet file is written.
     """
     if out_path.exists():
-        print(f"Already exists: {out_path.name}")
+        print(
+            f"output_file: {out_path.name}\n"
+            "status: already_exists"
+        )
         return False
 
     observations = pd.read_parquet(rrs_path)
@@ -64,11 +67,16 @@ def process_eddy(
     n_dropped = int((~valid_pixels).sum())
     if n_dropped:
         print(
-            f"Dropped {n_dropped}/{len(valid_pixels)} pixels with missing SST/SSS"
+            f"pixels_dropped: {n_dropped}\n"
+            f"total_pixels: {len(valid_pixels)}\n"
+            "reason: missing_sst_sss"
         )
 
     if not valid_pixels.any():
-        print("No valid pixels after SST/SSS filtering, skipping")
+        print(
+            "status: skipped\n"
+            "reason: no_valid_pixels_after_sst_sss_filter"
+        )
         return False
 
     observations = observations[valid_pixels].reset_index(drop=True)
@@ -92,7 +100,11 @@ def process_eddy(
     pigments.to_parquet(out_path, index=False)
 
     n_dates = observations["date"].nunique()
-    print(f"Wrote {out_path.name}: {len(pigments)} pixels, {n_dates} dates")
+    print(
+        f"output_file: {out_path.name}\n"
+        f"pixels_written: {len(pigments)}\n"
+        f"dates: {n_dates}"
+    )
     return True
 
 
@@ -111,7 +123,7 @@ def main(experiment: str | None = None) -> None:
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
 
-    print("Loading SST/SSS grids...")
+    print("status: loading_sst_sss_grids")
     sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
     sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
@@ -122,10 +134,19 @@ def main(experiment: str | None = None) -> None:
 
         rrs_files = sorted(rrs_dir.glob("eddy_*_rrs.parquet"))
         if not rrs_files:
-            print(f"[{polarity}] No Rrs files found in {rrs_dir}")
+            print(
+                f"polarity: {polarity}\n"
+                "status: skipped\n"
+                "reason: no_rrs_files\n"
+                f"rrs_dir: {rrs_dir}"
+            )
             continue
 
-        print(f"[{polarity}] Processing {len(rrs_files)} eddies...")
+        print(
+            f"polarity: {polarity}\n"
+            "status: processing\n"
+            f"eddies: {len(rrs_files)}"
+        )
         for rrs_path in rrs_files:
             out_path = out_dir / rrs_path.name.replace(
                 "_rrs.parquet", "_pigments.parquet"
@@ -133,7 +154,10 @@ def main(experiment: str | None = None) -> None:
             if process_eddy(rrs_path, out_path, sst_df, sss_df):
                 n_written += 1
 
-    print(f"Done. {n_written} pigment files written.")
+    print(
+        "status: complete\n"
+        f"pigment_files_written: {n_written}"
+    )
 
 
 if __name__ == "__main__":

@@ -71,7 +71,11 @@ def process_eddy(
     pft_abundances.to_parquet(out_path, index=False)
 
     n_dates = pigments["date"].nunique()
-    return f"{out_path.name}: {len(pigments)} pixels, {n_dates} dates"
+    return (
+        f"output_file: {out_path.name}\n"
+        f"pixels_written: {len(pigments)}\n"
+        f"dates: {n_dates}"
+    )
 
 
 def process_polarity(
@@ -86,11 +90,20 @@ def process_polarity(
 
     pigment_files = list(pigment_dir.glob("eddy_*_pigments.parquet"))
     if not pigment_files:
-        print(f"[{polarity}] No pigment files found in {pigment_dir}")
+        print(
+            f"polarity: {polarity}\n"
+            "status: skipped\n"
+            "reason: no_pigment_files\n"
+            f"pigment_dir: {pigment_dir}"
+        )
         return 0
 
     pigment_files.sort(key=lambda path: path.stat().st_size, reverse=True)
-    print(f"[{polarity}] {len(pigment_files)} eddies, {max_workers} workers")
+    print(
+        f"polarity: {polarity}\n"
+        f"eddies: {len(pigment_files)}\n"
+        f"workers: {max_workers}"
+    )
 
     n_written = 0
     n_failed = 0
@@ -108,10 +121,14 @@ def process_polarity(
                 result = future.result()
             except Exception as exc:
                 n_failed += 1
-                print(f"  FAILED {eddy_name}: {exc}")
+                print(
+                    "status: failed\n"
+                    f"eddy: {eddy_name}\n"
+                    f"error: {exc}"
+                )
                 continue
             if result:
-                print(f"  {result}")
+                print(result)
                 n_written += 1
 
     if n_failed:
@@ -150,7 +167,10 @@ def main(experiment: str | None = None) -> None:
     for polarity in ("cyclone", "anticyclone"):
         n_written += process_polarity(experiment, polarity, max_workers, settings)
 
-    print(f"Done. {n_written} PFT files written.")
+    print(
+        "status: complete\n"
+        f"pft_files_written: {n_written}"
+    )
 
 
 if __name__ == "__main__":

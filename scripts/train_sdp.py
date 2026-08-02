@@ -397,4 +397,4 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
         pd.DataFrame(coefficients).to_csv(a_filepath, index=False)
         pd.DataFrame(intercepts).to_csv(c_filepath, index=False)
 
-    print('Time taken:', time.time() - start)
+    print(f"elapsed_seconds: {time.time() - start}")

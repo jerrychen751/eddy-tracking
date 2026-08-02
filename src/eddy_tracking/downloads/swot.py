@@ -131,7 +131,11 @@ def _download_one(remote_path: str, settings: DownloadSettings) -> str:
     local_path = settings.local_dir / filename
 
     if local_path.exists():
-        return f"[skip] {filename}"
+        return (
+            "status: skipped\n"
+            f"file: {filename}\n"
+            "reason: already_exists"
+        )
 
     with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
         tmp_path = Path(tmp.name)
@@ -151,9 +155,16 @@ def _download_one(remote_path: str, settings: DownloadSettings) -> str:
             )
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
-        return f"[ERROR] {filename}: {exc}"
+        return (
+            "status: error\n"
+            f"file: {filename}\n"
+            f"error: {exc}"
+        )
 
-    return f"[done] {filename}"
+    return (
+        "status: downloaded\n"
+        f"file: {filename}"
+    )
 
 
 def _trim_file(
@@ -182,21 +193,24 @@ def _trim_file(
 
 
 def download_files(settings: DownloadSettings) -> list[str]:
-    print("Listing remote files...")
+    print("status: listing_remote_files")
     remote_files = _list_remote_files_with_sizes(settings)
     remote_files.sort(key=lambda item: Path(item[0]).name)
-    print(f"Found {len(remote_files)} files on server")
+    print(f"remote_files: {len(remote_files)}")
 
     selected_files = filter_by_date_range(remote_files, settings.date_range)
     print(
-        f"Filtered to {len(selected_files)} files in date range "
-        f"{settings.date_range}"
+        f"selected_files: {len(selected_files)}\n"
+        f"date_range: {settings.date_range}"
     )
 
     paths_to_download = [path for path, _ in selected_files]
     total_bytes = sum(size for _, size in selected_files if size is not None)
-    print(f"Total download size: {(total_bytes / 1024**3):.2f} GB")
-    print(f"Downloading {len(paths_to_download)} files")
+    print(f"download_size_gb: {(total_bytes / 1024**3):.2f}")
+    print(
+        "status: downloading\n"
+        f"files: {len(paths_to_download)}"
+    )
 
     failures = []
     with ThreadPoolExecutor(max_workers=settings.max_workers) as executor:
@@ -207,7 +221,7 @@ def download_files(settings: DownloadSettings) -> list[str]:
         for future in as_completed(futures):
             result = future.result()
             print(result)
-            if result.startswith("[ERROR]"):
+            if result.startswith("status: error\n"):
                 failures.append(result)
     return failures
 
@@ -219,9 +233,12 @@ def main(experiment: str | None = None) -> None:
 
     failures = download_files(load_settings(experiment))
     if failures:
-        print(f"\n{len(failures)} files failed:")
+        print(
+            "\nstatus: failed\n"
+            f"files_failed: {len(failures)}"
+        )
         for message in failures:
-            print(f"  {message}")
+            print(message)
         raise SystemExit(1)
 
 

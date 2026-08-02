@@ -75,7 +75,10 @@ def download_aqua_sst_8d_4km(
 
     Returns the number of new files saved. Skips files already in out_dir.
     """
-    print("Downloading SST (AQUA MODIS L3m 8D 4km)")
+    print(
+        "status: downloading_sst\n"
+        "product: aqua_modis_l3m_8d_4km"
+    )
     login_earthdata()
     configure_obdaac_opendap_auth()
 
@@ -84,7 +87,7 @@ def download_aqua_sst_8d_4km(
         temporal=(date_range[0], date_range[1]),
         count=-1,
     )
-    print(f"CMR returned {len(granules)} granules")
+    print(f"cmr_granules: {len(granules)}")
 
     if not granules:
         return 0
@@ -142,7 +145,10 @@ def main(experiment: str | None = None) -> None:
         out_dir=resolve_data_dir(cfg, "sst_dir"),
         collection_id=cfg["base"]["download"]["sst"]["collection_id"],
     )
-    print(f"Done. {n_saved} SST files saved.")
+    print(
+        "status: complete\n"
+        f"sst_files_saved: {n_saved}"
+    )
 
 
 def _parse_args() -> argparse.Namespace:

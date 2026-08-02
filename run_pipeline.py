@@ -61,7 +61,11 @@ _STAGE_MODULES = {
 def _log_stage(action: str, stage: str) -> None:
     """Print a timestamped stage status."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] -- {action}: {stage} --")
+    print(
+        f"timestamp: {timestamp}\n"
+        f"action: {action}\n"
+        f"stage: {stage}"
+    )
 
 
 def _run_stage(experiment: str, stage: str) -> None:
@@ -76,7 +80,10 @@ def _run_stage(experiment: str, stage: str) -> None:
         script = PROJECT_ROOT / f"{stage}.py"
         if not script.exists():
             print(
-                f"ERROR: Script not found for stage '{stage}': {script}",
+                "status: error\n"
+                "reason: script_not_found\n"
+                f"stage: {stage}\n"
+                f"script: {script}",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -99,7 +106,10 @@ def _run_parallel_downloads(
     if not download_stages:
         return
 
-    print(f"Running {len(download_stages)} parallel download(s)...")
+    print(
+        "status: running_parallel_downloads\n"
+        f"downloads: {len(download_stages)}"
+    )
 
     with ThreadPoolExecutor(max_workers=len(download_stages)) as pool:
         futures = {
@@ -112,12 +122,14 @@ def _run_parallel_downloads(
                 future.result()
             except subprocess.CalledProcessError:
                 print(
-                    f"ERROR: Download stage '{stage}' failed.",
+                    "status: error\n"
+                    "reason: download_stage_failed\n"
+                    f"stage: {stage}",
                     file=sys.stderr,
                 )
                 sys.exit(1)
 
-    print("All downloads complete.")
+    print("status: downloads_complete")
 
 
 def resolve_stages(
@@ -132,8 +144,10 @@ def resolve_stages(
     if from_stage:
         if from_stage not in VALID_STAGES:
             print(
-                f"ERROR: Unknown stage '{from_stage}'.\n"
-                f"Valid stages: {', '.join(VALID_STAGES)}",
+                "status: error\n"
+                "reason: unknown_stage\n"
+                f"stage: {from_stage}\n"
+                f"valid_stages: {', '.join(VALID_STAGES)}",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -148,8 +162,10 @@ def resolve_stages(
     for stage in args_stages:
         if stage not in VALID_STAGES:
             print(
-                f"ERROR: Unknown stage '{stage}'.\n"
-                f"Valid stages: {', '.join(VALID_STAGES)}",
+                "status: error\n"
+                "reason: unknown_stage\n"
+                f"stage: {stage}\n"
+                f"valid_stages: {', '.join(VALID_STAGES)}",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -169,16 +185,19 @@ def main() -> None:
     config_dir = PROJECT_ROOT / "configs" / args.experiment
     if not config_dir.is_dir():
         print(
-            f"ERROR: Config directory not found: {config_dir}\n"
-            f"Create configs/{args.experiment}/ with config.yaml before running.",
+            "status: error\n"
+            "reason: config_directory_not_found\n"
+            f"config_dir: {config_dir}\n"
+            f"experiment: {args.experiment}\n"
+            f"required_config_file: {config_dir / 'config.yaml'}",
             file=sys.stderr,
         )
         sys.exit(1)
 
     start_time = time.monotonic()
-    print(f"Pipeline: {args.experiment}")
-    print(f"Stages: {' '.join(stages_to_run)}")
-    print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"pipeline: {args.experiment}")
+    print(f"stages: {' '.join(stages_to_run)}")
+    print(f"started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     selected_stages = set(stages_to_run)
     _run_parallel_downloads(args.experiment, selected_stages)
@@ -194,7 +213,11 @@ def main() -> None:
 
     elapsed = time.monotonic() - start_time
     minutes, seconds = divmod(int(elapsed), 60)
-    print(f"Pipeline complete, {minutes}m {seconds}s")
+    print(
+        "status: pipeline_complete\n"
+        f"elapsed_minutes: {minutes}\n"
+        f"elapsed_seconds: {seconds}"
+    )
 
 
 if __name__ == "__main__":

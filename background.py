@@ -245,8 +245,9 @@ def compute_background_means(
     )
     if n_nonconvergent:
         print(
-            f"Dropped {n_nonconvergent}/{len(rrs_frame)} background pixels "
-            "whose GSM inversion did not converge"
+            f"background_pixels_dropped: {n_nonconvergent}\n"
+            f"total_background_pixels: {len(rrs_frame)}\n"
+            "reason: gsm_inversion_nonconvergence"
         )
     if pigments_df.empty:
         return None
@@ -279,14 +280,17 @@ def main(
 
     swot_files = index_swot_files_by_date(swot_dir)
     eddy_contours = load_eddy_contours(cyclone_track_dir, anticyclone_track_dir)
-    print("Loading SST/SSS grids...")
+    print("status: loading_sst_sss_grids")
     sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
     sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
     pace_files = sorted(pace_dir.glob("*.nc"))
     if limit:
         pace_files = pace_files[:limit]
-    print(f"Computing background means for {len(pace_files)} PACE composites...")
+    print(
+        "status: computing_background_means\n"
+        f"pace_composites: {len(pace_files)}"
+    )
 
     rng = np.random.default_rng(0)
     rows = []
@@ -298,7 +302,12 @@ def main(
 
         swot_fp = find_nearest_swot_file(swot_files, repr_date)
         if swot_fp is None:
-            print(f"{repr_date}: no SWOT day within {SWOT_SEARCH_DAYS} days, skipping")
+            print(
+                f"date: {repr_date}\n"
+                "status: skipped\n"
+                "reason: no_swot_day\n"
+                f"swot_search_days: {SWOT_SEARCH_DAYS}"
+            )
             continue
 
         with xr.open_dataset(fp) as ds:
@@ -315,7 +324,11 @@ def main(
         # Candidate background pixels: calm and fully observed across all bands.
         candidate = np.flatnonzero(calm.ravel() & all_finite)
         if candidate.size == 0:
-            print(f"{repr_date}: no calm/observed pixels, skipping")
+            print(
+                f"date: {repr_date}\n"
+                "status: skipped\n"
+                "reason: no_calm_observed_pixels"
+            )
             continue
 
         # Drop any candidate falling inside an eddy active during the window.
@@ -331,7 +344,11 @@ def main(
             candidate = candidate[~inside]
         n_candidate = candidate.size
         if n_candidate == 0:
-            print(f"{repr_date}: no background pixels after eddy exclusion, skipping")
+            print(
+                f"date: {repr_date}\n"
+                "status: skipped\n"
+                "reason: no_background_pixels_after_eddy_exclusion"
+            )
             continue
 
         if subsample and n_candidate > subsample:
@@ -348,21 +365,32 @@ def main(
 
         means = compute_background_means(df, sst_df, sss_df)
         if means is None:
-            print(f"{repr_date}: no valid pixels after SST/SSS filter, skipping")
+            print(
+                f"date: {repr_date}\n"
+                "status: skipped\n"
+                "reason: no_valid_pixels_after_sst_sss_filter"
+            )
             continue
         means["date"] = date_value
         rows.append(means)
-        print(f"{repr_date}: {means['n_bg_pixels']} background pixels (of {n_candidate} candidates)")
+        print(
+            f"date: {repr_date}\n"
+            f"background_pixels: {means['n_bg_pixels']}\n"
+            f"candidate_pixels: {n_candidate}"
+        )
 
     if not rows:
-        print("No background rows produced.")
+        print("status: no_background_rows_produced")
         return
 
     out = pd.DataFrame(rows)
     out = out[["date"] + [f"bg_mean_{c}" for c in PIGMENTS.values()] + ["n_bg_pixels"]]
     out_path = out_dir / "bg_mean.parquet"
     out.to_parquet(out_path, index=False)
-    print(f"Wrote {out_path}  ({len(out)} dates)")
+    print(
+        f"output_path: {out_path}\n"
+        f"dates_written: {len(out)}"
+    )
 
 
 if __name__ == "__main__":

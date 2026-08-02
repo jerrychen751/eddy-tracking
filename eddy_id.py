@@ -138,7 +138,11 @@ def main(experiment: str | None = None) -> None:
 
     input_paths = list(swot_dir.glob("*.nc"))
     if not input_paths:
-        print(f"No .nc files found in {swot_dir}")
+        print(
+            "status: skipped\n"
+            "reason: no_nc_files\n"
+            f"input_dir: {swot_dir}"
+        )
         return
 
     # CPU-bound (Bessel filter + contour detection) - ThreadPoolExecutor would
@@ -168,10 +172,20 @@ def main(experiment: str | None = None) -> None:
         for future in as_completed(futures):
             input_path = futures[future]
             try:
-                print(future.result())
+                anticyclone_output_path, cyclone_output_path = future.result()
+                print(
+                    f"input_file: {input_path.name}\n"
+                    "status: complete\n"
+                    f"anticyclone_output_path: {anticyclone_output_path}\n"
+                    f"cyclone_output_path: {cyclone_output_path}"
+                )
             except Exception as exc:
                 n_failed += 1
-                print(f"FAILED {input_path.name}: {exc}")
+                print(
+                    "status: failed\n"
+                    f"input_file: {input_path.name}\n"
+                    f"error: {exc}"
+                )
 
     if n_failed:
         raise RuntimeError(f"{n_failed}/{len(input_paths)} files failed in eddy_id")

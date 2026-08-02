@@ -193,7 +193,12 @@ def simulated_annealing(
         rmse_history.append(f_best_err)
 
         if verbose and (k % 50 == 0 or k == niter):
-            print(f"  SA iter {k}/{niter}: RMSE {f_best_err:.6f}, Temp {temperature:.4f}")
+            print(
+                f"sa_iteration: {k}\n"
+                f"total_sa_iterations: {niter}\n"
+                f"rmse: {f_best_err:.6f}\n"
+                f"temperature: {temperature:.4f}"
+            )
 
     final = nnls_mf_final(f_best, S_normalized, S_Chl, S_weights)
 

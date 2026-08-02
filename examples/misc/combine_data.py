@@ -43,7 +43,10 @@ def main() -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "swot_l3_cycle474_combined.nc"
         combined.to_netcdf(output_path)
-        print(f"Written combined dataset to: {output_path}")
+        print(
+            f"output_path: {output_path}\n"
+            "status: written"
+        )
     finally:
         for dataset in datasets:
             dataset.close()

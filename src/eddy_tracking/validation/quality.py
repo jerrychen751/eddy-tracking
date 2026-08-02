@@ -86,17 +86,19 @@ def apply_l2_quality_flags(
         filtered_df = df.copy()
         filtered_df.loc[~keep, list(fact_columns)] = np.nan
         print(
-            "L2 quality flags: "
-            f"masked fact columns in {filtered_count:,} of {total_count:,} "
-            f"rows ({filtered_percent:.1f}%)."
+            "quality_flag_action: mask\n"
+            f"rows_masked: {filtered_count:,}\n"
+            f"total_rows: {total_count:,}\n"
+            f"filtered_percent: {filtered_percent:.1f}"
         )
     else:
         filtered_df = df.loc[keep].copy().reset_index(drop=True)
         print(
-            "L2 quality flags: "
-            f"{total_count:,} rows before, {retained_count:,} rows after; "
-            f"filtered {filtered_count:,} of {total_count:,} rows "
-            f"({filtered_percent:.1f}%)."
+            "quality_flag_action: remove\n"
+            f"rows_before: {total_count:,}\n"
+            f"rows_after: {retained_count:,}\n"
+            f"rows_filtered: {filtered_count:,}\n"
+            f"filtered_percent: {filtered_percent:.1f}"
         )
 
     filtered_df.attrs = df.attrs.copy()

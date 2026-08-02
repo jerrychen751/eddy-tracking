@@ -102,7 +102,12 @@ def download_pace_l3(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     matches = search_pace_l3_granules(date_range, temporal_res, product)
-    print(f"Matched {len(matches)} {temporal_res} {product} 4km granules")
+    print(
+        f"matched_granules: {len(matches)}\n"
+        f"temporal_resolution: {temporal_res}\n"
+        f"product: {product}\n"
+        "spatial_resolution_km: 4"
+    )
 
     saved = skipped = errors = 0
     for date_key, (filename, granule) in sorted(matches.items()):
@@ -128,10 +133,19 @@ def download_pace_l3(
             with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
                 _subset_and_save(ds, out_path, lon_range, lat_range)
             size_mb = out_path.stat().st_size / (1024 * 1024)
-            print(f"Saved: {filename} ({size_mb:.1f} MB)")
+            print(
+                "status: saved\n"
+                f"file: {filename}\n"
+                f"size_mb: {size_mb:.1f}"
+            )
             saved += 1
         except Exception as exc:
-            print(f"Error on {date_key}: {exc}", file=sys.stderr)
+            print(
+                "status: error\n"
+                f"date: {date_key}\n"
+                f"error: {exc}",
+                file=sys.stderr,
+            )
             errors += 1
 
     return saved, skipped, errors
@@ -160,7 +174,12 @@ def main(experiment: str | None = None) -> None:
         temporal_res=temporal_resolution,
     )
 
-    print(f"Done. {n_saved} saved, {n_skipped} skipped, {n_errors} errors.")
+    print(
+        "status: download_finished\n"
+        f"files_saved: {n_saved}\n"
+        f"files_skipped: {n_skipped}\n"
+        f"errors: {n_errors}"
+    )
     if n_errors:
         raise SystemExit(f"{n_errors} date(s) failed to download")
 

@@ -86,7 +86,11 @@ def iter_eddy_files(experiment: str) -> Iterator[tuple[Path, pd.DataFrame]]:
     for polarity in ("cyclone", "anticyclone"):
         pig_dir = resolve_output_dir(experiment, "pigments", polarity)
         files = sorted(pig_dir.glob("eddy_*_pigments.parquet"))
-        print(f"[{polarity}] {len(files)} eddy files in {pig_dir}")
+        print(
+            f"polarity: {polarity}\n"
+            f"eddy_files: {len(files)}\n"
+            f"pigment_dir: {pig_dir}"
+        )
         for fp in files:
             yield fp, pd.read_parquet(fp)
 
@@ -112,11 +116,14 @@ def compute_pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
     if not frames:
         raise RuntimeError("No pigment files found - did run_sdp.py finish?")
     df = pd.concat(frames, ignore_index=True)
-    print(f"Pooled observations: {len(df)}")
+    print(f"pooled_observations: {len(df)}")
 
     pigment_cols = get_pigment_cols(df)
     df_clean = clean_pigments(df, pigment_cols)
-    print(f"Clean observations: {len(df_clean)} ({len(df) - len(df_clean)} dropped)")
+    print(
+        f"clean_observations: {len(df_clean)}\n"
+        f"observations_dropped: {len(df) - len(df_clean)}"
+    )
 
     ratios = df_clean[pigment_cols].div(df_clean["T chla"], axis=0)
     corr = ratios.corr().values
@@ -159,7 +166,10 @@ def compute_per_eddy_mean_correlation(
     if not per_eddy_corrs:
         raise RuntimeError("No eddies with enough valid pixels for per-eddy clustering")
 
-    print(f"Per-eddy correlation matrices: {len(per_eddy_corrs)} kept, {n_skipped} skipped")
+    print(
+        f"correlation_matrices_kept: {len(per_eddy_corrs)}\n"
+        f"correlation_matrices_skipped: {n_skipped}"
+    )
     mean_corr = np.mean(per_eddy_corrs, axis=0)
     assert pigment_cols_ref is not None
     return pigment_cols_ref, mean_corr, len(per_eddy_corrs)
@@ -223,7 +233,10 @@ def save_dendrogram(
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved dendrogram: {out_path}")
+    print(
+        f"dendrogram_path: {out_path}\n"
+        "status: saved"
+    )
 
 
 def save_cluster_table(
@@ -254,7 +267,11 @@ def save_cluster_table(
     table.to_csv(out_path, index=False)
 
     n_clusters = table["cluster"].nunique()
-    print(f"{n_clusters} clusters at threshold {threshold}: {out_path}")
+    print(
+        f"clusters: {n_clusters}\n"
+        f"threshold: {threshold}\n"
+        f"output_path: {out_path}"
+    )
     print(table.to_string(index=False))
 
     print("\nCluster -> PFT group:")
@@ -299,7 +316,10 @@ def main() -> None:
     save_cluster_table(Z, pigment_cols, args.threshold,
                        out_dir / f"cluster_assignments{suffix}.csv")
 
-    print(f"\nDone. Outputs in {out_dir}")
+    print(
+        "\nstatus: complete\n"
+        f"output_dir: {out_dir}"
+    )
 
 
 if __name__ == "__main__":

@@ -95,7 +95,12 @@ def run_sdp(
     sdp = np.zeros((rrs_residuals_d2.shape[0], len(sdp_names)))
 
     for p, name in enumerate(sdp_names):
-        print(f"Predicting {name} ({p+1}/{len(sdp_names)})...")
+        print(
+            "status: predicting\n"
+            f"pigment: {name}\n"
+            f"pigment_number: {p + 1}\n"
+            f"total_pigments: {len(sdp_names)}"
+        )
 
         a_coefs, c_coefs = _load_coefficients(name)
 

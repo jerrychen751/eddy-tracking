@@ -132,8 +132,9 @@ def run_phytoclass(
     )
     n_clusters = len(clusters)
     print(
-        f"Phytoclass: {n_samples} samples -> {n_clusters} clusters, "
-        f"SA({n_iter} iter)"
+        f"phytoclass_samples: {n_samples}\n"
+        f"clusters: {n_clusters}\n"
+        f"sa_iterations: {n_iter}"
     )
 
     cluster_seeds = [
@@ -151,8 +152,10 @@ def run_phytoclass(
     if n_jobs == 1 or n_clusters == 1:
         for cluster_idx, cluster_df in enumerate(cluster_frames):
             print(
-                f"  cluster {cluster_idx + 1}/{n_clusters}: "
-                f"{len(cluster_df)} samples..."
+                f"cluster: {cluster_idx + 1}\n"
+                f"total_clusters: {n_clusters}\n"
+                f"samples: {len(cluster_df)}\n"
+                "status: processing"
             )
             cluster_result = _sa_on_cluster(
                 cluster_df,
@@ -181,7 +184,10 @@ def run_phytoclass(
                     result_by_cluster[cluster_idx] = future.result()
                 except Exception as exc:
                     print(
-                        f"  cluster {cluster_idx + 1}/{n_clusters} FAILED: {exc}"
+                        f"cluster: {cluster_idx + 1}\n"
+                        f"total_clusters: {n_clusters}\n"
+                        "status: failed\n"
+                        f"error: {exc}"
                     )
                     raise
 

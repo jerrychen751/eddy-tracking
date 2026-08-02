@@ -216,7 +216,12 @@ def main(experiment: str | None = None) -> None:
     for polarity, track_dir in track_dirs.items():
         zarr_path = track_dir / f"{track_dir.name}_tracks.zarr"
         if not zarr_path.exists():
-            print(f"[{polarity}] No tracks zarr at {zarr_path}, skipping")
+            print(
+                f"polarity: {polarity}\n"
+                "status: skipped\n"
+                "reason: no_tracks_zarr\n"
+                f"tracks_path: {zarr_path}"
+            )
             continue
 
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
@@ -239,20 +244,32 @@ def main(experiment: str | None = None) -> None:
             }
         )
         print(
-            f"[{polarity}] {n_indexed_tracks}/{n_tracks} tracks, "
-            f"{n_observations} observations indexed"
+            f"polarity: {polarity}\n"
+            f"indexed_tracks: {n_indexed_tracks}\n"
+            f"total_tracks: {n_tracks}\n"
+            f"indexed_observations: {n_observations}"
         )
 
     if not date_index:
-        print("No eddy observations found. Nothing to do.")
+        print(
+            "status: skipped\n"
+            "reason: no_eddy_observations"
+        )
         return
 
     pace_files = sorted(pace_dir.glob("*.nc"))
     if not pace_files:
-        print(f"No PACE files found in {pace_dir}")
+        print(
+            "status: skipped\n"
+            "reason: no_pace_files\n"
+            f"pace_dir: {pace_dir}"
+        )
         return
 
-    print(f"{len(pace_files)} PACE files, {len(date_index)} unique eddy-dates")
+    print(
+        f"pace_files: {len(pace_files)}\n"
+        f"unique_eddy_dates: {len(date_index)}"
+    )
 
     with xr.open_dataset(pace_files[0]) as sample:
         wavelengths = sample.coords["wavelength"].values.astype(int)
@@ -289,7 +306,11 @@ def main(experiment: str | None = None) -> None:
                 latitudes = dataset["lat"].values
                 rrs = dataset["Rrs"].values
         except OSError as exc:
-            print(f"Skipping {pace_path.name}: {exc}")
+            print(
+                f"input_file: {pace_path.name}\n"
+                "status: skipped\n"
+                f"error: {exc}"
+            )
             continue
 
         for eddy in matched_eddies:
@@ -321,12 +342,16 @@ def main(experiment: str | None = None) -> None:
             rows_by_eddy[(eddy.track_id, eddy.polarity)].append(rows)
 
             print(
-                f"{date_label} | {eddy.polarity} #{eddy.track_id}: "
-                f"{n_pixels} pixels, coverage={result['coverage']:.2f}"
+                f"date_window: {date_label}\n"
+                f"polarity: {eddy.polarity}\n"
+                f"track_id: {eddy.track_id}\n"
+                f"pixels: {n_pixels}\n"
+                f"coverage: {result['coverage']:.2f}"
             )
 
     print(
-        f"Matched {n_matched_files}/{len(pace_files)} PACE files to eddy dates"
+        f"matched_pace_files: {n_matched_files}\n"
+        f"total_pace_files: {len(pace_files)}"
     )
 
     columns = METADATA_COLS + rrs_columns
@@ -347,11 +372,15 @@ def main(experiment: str | None = None) -> None:
 
         n_dates = observations["date"].nunique()
         print(
-            f"Wrote {out_path.name}: {len(observations)} pixels across "
-            f"{n_dates} dates"
+            f"output_file: {out_path.name}\n"
+            f"pixels_written: {len(observations)}\n"
+            f"dates: {n_dates}"
         )
 
-    print(f"Done. {n_written} eddy files written.")
+    print(
+        "status: complete\n"
+        f"eddy_files_written: {n_written}"
+    )
 
 
 if __name__ == "__main__":
