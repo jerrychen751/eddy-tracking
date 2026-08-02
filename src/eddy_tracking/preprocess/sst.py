@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -9,12 +10,11 @@ import pandas as pd
 import xarray as xr
 
 
-def read_multiple_sst(sst_dir: Path) -> pd.DataFrame:
-    """Load SST composites into one in-memory time-indexed DataFrame."""
-    sst_dir = Path(sst_dir)
-    files = sorted(sst_dir.glob("*.nc"))
+def read_multiple_sst(fps: Sequence[Path | str]) -> pd.DataFrame:
+    """Load SST composite files into one in-memory time-indexed DataFrame."""
+    files = [Path(fp) for fp in fps]
     if not files:
-        raise FileNotFoundError(f"No SST .nc files in {sst_dir}")
+        raise ValueError("fps must contain at least one SST file")
 
     arrays = []
     for f in files:

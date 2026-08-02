@@ -112,8 +112,8 @@ def main(experiment: str | None = None) -> None:
     sss_dir = resolve_data_dir(cfg, "sss_dir")
 
     print("Loading SST/SSS grids...")
-    sst_df = read_multiple_sst(sst_dir)
-    sss_df = read_multiple_sss(sss_dir)
+    sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
+    sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
     n_written = 0
     for polarity in ("cyclone", "anticyclone"):

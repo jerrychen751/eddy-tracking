@@ -280,8 +280,8 @@ def main(
     swot_files = index_swot_files_by_date(swot_dir)
     eddy_contours = load_eddy_contours(cyclone_track_dir, anticyclone_track_dir)
     print("Loading SST/SSS grids...")
-    sst_df = read_multiple_sst(sst_dir)
-    sss_df = read_multiple_sss(sss_dir)
+    sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
+    sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
     pace_files = sorted(pace_dir.glob("*.nc"))
     if limit:

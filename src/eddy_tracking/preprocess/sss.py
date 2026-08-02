@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -9,12 +10,11 @@ import pandas as pd
 import xarray as xr
 
 
-def read_multiple_sss(sss_dir: Path) -> pd.DataFrame:
-    """Load SSS composites into one in-memory time-indexed DataFrame."""
-    sss_dir = Path(sss_dir)
-    files = sorted(sss_dir.glob("*.nc4"))
+def read_multiple_sss(fps: Sequence[Path | str]) -> pd.DataFrame:
+    """Load SSS composite files into one in-memory time-indexed DataFrame."""
+    files = [Path(fp) for fp in fps]
     if not files:
-        raise FileNotFoundError(f"No SSS .nc4 files in {sss_dir}")
+        raise ValueError("fps must contain at least one SSS file")
 
     arrays = []
     for f in files:

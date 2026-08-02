@@ -49,16 +49,43 @@ def get_5x5_pace_l2_matchups(
     target_lon: float,
     target_lat: float,
 ) -> pd.DataFrame:
-    """
-    Return rows of the dataframe which are the closest 5x5 points geographically to the target lon & lat. Assumes columns "longitude" and "latitude" exist in the dataframe.
-    """
+    """Return the native 5 by 5 box centered on the closest valid PACE pixel."""
     distances = calculate_dist_to_point(
         df["longitude"],
         df["latitude"],
         target_lon,
         target_lat,
     )
-    closest_indices = distances.nsmallest(25).index
-    matchups = df.loc[closest_indices].copy().reset_index(drop=True)
+    valid_centers = (
+        distances.notna()
+        & df["scan_line"].notna()
+        & df["pixel"].notna()
+    )
+    if not valid_centers.any():
+        matchups = df.iloc[0:0].copy().reset_index(drop=True)
+        matchups.attrs = df.attrs.copy()
+        return matchups
+
+    closest_index = distances.loc[valid_centers].idxmin()
+    center_scan_line = int(df.loc[closest_index, "scan_line"])
+    center_pixel = int(df.loc[closest_index, "pixel"])
+
+    same_source = pd.Series(True, index=df.index)
+    if "source_file" in df:
+        source_file = df.loc[closest_index, "source_file"]
+        same_source = df["source_file"].eq(source_file)
+
+    native_box = (
+        same_source
+        & df["scan_line"].between(
+            center_scan_line - 2,
+            center_scan_line + 2,
+        )
+        & df["pixel"].between(
+            center_pixel - 2,
+            center_pixel + 2,
+        )
+    )
+    matchups = df.loc[native_box].copy().reset_index(drop=True)
     matchups.attrs = df.attrs.copy()
     return matchups

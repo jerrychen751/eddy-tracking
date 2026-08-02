@@ -201,7 +201,7 @@ def _read_l2_flag_masks(flags: xr.DataArray) -> dict[str, int]:
 
 
 def read_multiple_pace_l2(
-    paths: Sequence[Path | str],
+    fps: Sequence[Path | str],
     *,
     line_indexer: _DimensionIndexer | None = None,
     pixel_indexer: _DimensionIndexer | None = None,
@@ -220,9 +220,9 @@ def read_multiple_pace_l2(
         "l2_flag_masks",
     )
 
-    for path in paths:
+    for fp in fps:
         frame = read_pace_l2(
-            path,
+            fp,
             line_indexer=line_indexer,
             pixel_indexer=pixel_indexer,
         )
@@ -234,12 +234,12 @@ def read_multiple_pace_l2(
         else:
             if not frame.columns.equals(expected_columns):
                 raise ValueError(
-                    f"{path} has data columns that do not match the first file"
+                    f"{fp} has data columns that do not match the first file"
                 )
             for name in shared_attr_names:
                 if frame.attrs[name] != shared_attrs[name]:
                     raise ValueError(
-                        f"{path} has {name} metadata that does not match "
+                        f"{fp} has {name} metadata that does not match "
                         "the first file"
                     )
 
@@ -251,7 +251,7 @@ def read_multiple_pace_l2(
         frames.append(frame)
 
     if not frames:
-        raise ValueError("paths must contain at least one PACE Level-2 file")
+        raise ValueError("fps must contain at least one PACE Level-2 file")
 
     combined = pd.concat(frames, ignore_index=True)
     combined.attrs = shared_attrs

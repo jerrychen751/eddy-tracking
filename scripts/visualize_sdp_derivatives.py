@@ -50,8 +50,8 @@ def main() -> None:
     wl_proc, rrs_proc = preprocess_rrs_batch(wavelengths, rrs_native)
 
     print("Loading SST/SSS grids...")
-    sst_df = read_multiple_sst(sst_dir)
-    sss_df = read_multiple_sss(sss_dir)
+    sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
+    sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
     # Sample SST/SSS at the eddy-mean location and the median date, since
     # we've averaged across the whole eddy's coverage period.
