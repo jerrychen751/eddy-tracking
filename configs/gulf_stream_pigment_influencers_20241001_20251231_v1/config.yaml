@@ -52,8 +52,8 @@ eddy_id:
 
   bessel_high_filter_wavelength: 500  # high-pass cutoff (km)
 
-  step: 0.004      # SSH contour step (m)
-  shape_error: 55  # max % deviation from circle
+  step: 0.004 # SSH contour step (m)
+  shape_error: 55 # max % deviation from circle
 
 eddy_track:
   # Max consecutive missed days before breaking a track
@@ -64,8 +64,8 @@ eddy_track:
 
   # Post-tracking position smoothing (half-window sizes)
   position_filter:
-    median_half_window: 1  # removes single-day outlier jumps
-    loess_half_window: 5   # smooths trajectory
+    median_half_window: 1 # removes single-day outlier jumps
+    loess_half_window: 5 # smooths trajectory
 
 collocate_pace:
   min_coverage: 0.8

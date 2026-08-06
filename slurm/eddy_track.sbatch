@@ -10,7 +10,7 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=logs/eddy_track_%j.log
 
-# Eddy tracking — sequential graph-linking across all daily ID files.
+# Eddy tracking - sequential graph-linking across all daily ID files.
 # Fast (<1 min), but needs all eddy_id outputs to exist first.
 
 cd ~/projects/eddy-tracking

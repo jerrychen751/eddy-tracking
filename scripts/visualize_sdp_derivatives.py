@@ -1,8 +1,7 @@
 """
 Visualize the SDP preprocessing chain on a real collocated PACE pixel.
 
-Produces a 4-panel figure: raw Rrs + GSM model fit, residual (observed - modeled),
-first spectral derivative of residual, second spectral derivative of residual.
+Produces a 4-panel figure: raw Rrs + GSM model fit, residual (observed - modeled), first spectral derivative of residual, second spectral derivative of residual.
 Makes the case for 2nd derivative feature engineering visually obvious.
 """
 
@@ -13,14 +12,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-EXPERIMENT = "gulf_stream_20241001_20250701"
-OUTPUT_PATH = REPO_ROOT / "visuals" / "sdp_derivative_cascade.png"
-
 
 def main() -> None:
-    """Render the SDP derivative cascade and write it to ``OUTPUT_PATH``."""
-    repo_path = str(REPO_ROOT)
+    """Render the SDP derivative cascade and write it to visuals/sdp_derivative_cascade.png under the repo root."""
+    repo_root = Path(__file__).resolve().parent.parent
+    experiment = "gulf_stream_20241001_20250701"
+    output_path = repo_root / "visuals" / "sdp_derivative_cascade.png"
+
+    repo_path = str(repo_root)
     sys.path.insert(0, repo_path)
     try:
         from utils.config import load_config, resolve_data_dir, resolve_output_dir
@@ -32,19 +31,19 @@ def main() -> None:
     finally:
         sys.path.remove(repo_path)
 
-    cfg = load_config(EXPERIMENT)
+    cfg = load_config(experiment)
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
 
-    # Pool every collocated cyclone pixel across every eddy + date. The goal is
-    # a high-SNR demonstration of the derivative cascade, not a per-eddy result.
-    rrs_dir = resolve_output_dir(EXPERIMENT, "collocate_pace", "cyclone")
+    # Pool every collocated cyclone pixel across every eddy + date.
+    # The goal is a high-SNR demonstration of the derivative cascade, not a per-eddy result.
+    rrs_dir = resolve_output_dir(experiment, "collocate_pace", "cyclone")
     rrs_files = sorted(rrs_dir.glob("eddy_*_rrs.parquet"))
     df = pd.concat([pd.read_parquet(fp) for fp in rrs_files], ignore_index=True)
 
     rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
     wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
-    rrs_native = df[rrs_cols].values.mean(axis=0, keepdims=True)
+    rrs_native = df[rrs_cols].values.mean(axis=0, keepdims=True) # (n_pixels, n_wavelengths) -> (1, n_wavelengths)
     print(
         f"pooled_pixels: {len(df)}\n"
         f"cyclones: {len(rrs_files)}\n"
@@ -57,8 +56,7 @@ def main() -> None:
     sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
     sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
 
-    # Sample SST/SSS at the eddy-mean location and the median date, since
-    # we've averaged across the whole eddy's coverage period.
+    # Sample SST/SSS at the eddy-mean location and the median date, since we've averaged across the whole eddy's coverage period.
     center_lon = float(df["pixel_lon"].mean())
     center_lat = float(df["pixel_lat"].mean())
     median_date = df["date"].sort_values().iloc[len(df) // 2]
@@ -79,18 +77,17 @@ def main() -> None:
     rrs_df = pd.DataFrame(rrs_proc, columns=wl_int)
     _, RrsD = get_rrs_residuals(rrs_df, sst, sss, wl_proc)
 
-    residual = RrsD.values[:, 0]
-    rrs_measured = rrs_proc[0]
+    residual = RrsD.values[:, 0] # (n_wavelengths, 1) -> (n_wavelengths,)
+    rrs_measured = rrs_proc[0] # (1, n_wavelengths) -> (n_wavelengths,)
     rrs_modeled = rrs_measured - residual
 
-    d1 = np.diff(residual, 1)
-    d2 = np.diff(residual, 2)
-    wl_d1 = wl_proc[:-1] + 0.5
-    wl_d2 = wl_proc[1:-1]
+    d1 = np.diff(residual, 1) # (n_wavelengths,) -> (n_wavelengths - 1,)
+    d2 = np.diff(residual, 2) # (n_wavelengths,) -> (n_wavelengths - 2,)
+    wl_d1 = wl_proc[:-1] + 0.5 # (n_wavelengths,) -> (n_wavelengths - 1,), each first difference sits between two samples
+    wl_d2 = wl_proc[1:-1] # (n_wavelengths,) -> (n_wavelengths - 2,)
 
-    # PACE has a wavelength gap covering the O2 A-band. Cubic-spline interpolation
-    # across it produces a non-physical bump that the 2nd derivative amplifies.
-    # Shade it so viewers see it's an instrument artifact, not a pigment feature.
+    # PACE has a wavelength gap covering the O2 A-band.
+    # Cubic-spline interpolation across it produces a non-physical bump that the 2nd derivative amplifies.
     O2_GAP = (588, 613)
 
     fig, axes = plt.subplots(4, 1, figsize=(9, 10), sharex=True)
@@ -142,10 +139,10 @@ def main() -> None:
         fontsize=10,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUTPUT_PATH, dpi=160)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=160)
     print(
-        f"output_path: {OUTPUT_PATH}\n"
+        f"output_path: {output_path}\n"
         "status: written"
     )
 

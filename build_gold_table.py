@@ -1,8 +1,7 @@
 """
 Assemble the gold eddy-pigment table: one analysis-ready row per eddy-day.
 
-Aggregates per-pixel pigments to eddy-interior means, joins track and
-environmental features, and writes ``gold/eddy_pigment_table.parquet``.
+Aggregates per-pixel pigments to eddy-interior means, joins track and environmental features, and writes ``gold/eddy_pigment_table.parquet``.
 """
 
 import argparse
@@ -34,9 +33,6 @@ PIGMENTS = {
     "chl c3": "Chlc3",
     "Perid": "Perid",
 }
-PET_EPOCH = dt.date(1950, 1, 1)
-# Minimum interior sample size for a reliable eddy-day mean.
-MIN_EDDY_PIXELS = 10
 
 
 def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
@@ -66,6 +62,7 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
 
 def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build observation features and birth/death dates for both polarities."""
+    pet_epoch = dt.date(1950, 1, 1)
     observation_frames = []
     lifetime_rows = []
     for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
@@ -76,7 +73,7 @@ def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         observed = ~tracks.virtual.astype(bool)
         dates = pd.to_datetime(
             [
-                PET_EPOCH + dt.timedelta(days=int(time))
+                pet_epoch + dt.timedelta(days=int(time))
                 for time in tracks.time[observed]
             ]
         )
@@ -155,16 +152,12 @@ def compute_gs_distance(centerline_by_date, date, center_lon, center_lat) -> flo
     return dist
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
-
-
 def main(experiment: str | None = None) -> None:
     """Assemble and write the experiment's gold eddy-pigment table."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     cfg = load_config(experiment)
     gulf_stream_dir = resolve_output_dir(experiment, "gulf_stream")
@@ -186,15 +179,16 @@ def main(experiment: str | None = None) -> None:
         f"eddies: {n_eddies}"
     )
 
+    min_eddy_pixels = 10
     n_before = len(eddy_days)
     eddy_days = eddy_days[
-        eddy_days["n_eddy_pixels"] >= MIN_EDDY_PIXELS
+        eddy_days["n_eddy_pixels"] >= min_eddy_pixels
     ].reset_index(drop=True)
     n_dropped = n_before - len(eddy_days)
     if n_dropped:
         print(
             f"eddy_days_dropped: {n_dropped}\n"
-            f"minimum_interior_pixels: {MIN_EDDY_PIXELS}"
+            f"minimum_interior_pixels: {min_eddy_pixels}"
         )
 
     track_observations, track_lifetimes = build_track_features(experiment)
@@ -215,8 +209,7 @@ def main(experiment: str | None = None) -> None:
         eddy_days["age_days"] / lifetime_days,
         np.nan,
     )
-    # A composite date can fall just outside a track's daily detections; keep the
-    # life fraction within [0, 1].
+    # A composite date can fall just outside a track's daily detections; keep the life fraction within [0, 1].
     eddy_days["age_frac"] = eddy_days["age_frac"].clip(0, 1)
     eddy_days["birth_observed"] = eddy_days["birth_date"] > eddy_start
     eddy_days["death_observed"] = eddy_days["death_date"] < eddy_end

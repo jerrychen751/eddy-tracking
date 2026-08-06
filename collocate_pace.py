@@ -1,14 +1,11 @@
 """
 Collocate PACE L3 Rrs observations with tracked eddy contours.
 
-For each PACE file (daily or 8-day composite), finds all eddies that
-were detected during the observation period, extracts valid Rrs pixels
-within each eddy's contour, and writes per-eddy Parquet files.
+For each PACE file (daily or 8-day composite), finds all eddies that were detected during the observation period, extracts valid Rrs pixels within each eddy's contour, and writes per-eddy Parquet files.
 
 Temporal resolution is set via the collocate_pace config section:
   - "DAY" (default): exact date match between PACE file and eddy detection
-  - "8D": for each 8-day composite, picks the eddy contour from the day
-    closest to the window midpoint (since the Rrs is a temporal average)
+  - "8D": for each 8-day composite, picks the eddy contour from the day closest to the window midpoint (since the Rrs is a temporal average)
 """
 
 import argparse
@@ -34,8 +31,6 @@ from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
 from eddy_tracking.utils.subset import in_subset, parse_date_range
 
 PET_EPOCH = dt.date(1950, 1, 1)
-PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.")
-PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
 
 
 class EddyObs(NamedTuple):
@@ -62,18 +57,18 @@ def collocate_one_observation(
 
     NASA L3 quality flags are already represented as NaN values in ``rrs``.
     """
-    longitude_grid, latitude_grid = np.meshgrid(lon, lat)
+    longitude_grid, latitude_grid = np.meshgrid(lon, lat)  # (n_lon,) + (n_lat,) -> (n_lat, n_lon) each
     n_grid_cells = longitude_grid.size
-    grid_longitudes = longitude_grid.ravel()
-    grid_latitudes = latitude_grid.ravel()
-    flattened_rrs = rrs.reshape(n_grid_cells, -1)
+    grid_longitudes = longitude_grid.ravel()  # (n_lat, n_lon) -> (n_lat*n_lon,)
+    grid_latitudes = latitude_grid.ravel()  # (n_lat, n_lon) -> (n_lat*n_lon,)
+    flattened_rrs = rrs.reshape(n_grid_cells, -1)  # (n_lat, n_lon, n_wavelength) -> (n_lat*n_lon, n_wavelength)
 
-    polygon = MplPath(np.column_stack([contour_lon, contour_lat]))
+    polygon = MplPath(np.column_stack([contour_lon, contour_lat]))  # (n_vertices,) + (n_vertices,) -> (n_vertices, 2)
     inside_contour = polygon.contains_points(
-        np.column_stack([grid_longitudes, grid_latitudes])
+        np.column_stack([grid_longitudes, grid_latitudes])  # (n_lat*n_lon,) + (n_lat*n_lon,) -> (n_lat*n_lon, 2)
     )
 
-    finite_spectra = np.all(np.isfinite(flattened_rrs), axis=1)
+    finite_spectra = np.all(np.isfinite(flattened_rrs), axis=1)  # (n_lat*n_lon, n_wavelength) -> (n_lat*n_lon,)
     valid_pixels = inside_contour & finite_spectra
 
     n_inside = int(np.sum(inside_contour))
@@ -86,9 +81,9 @@ def collocate_one_observation(
         return None
 
     return {
-        "rrs": flattened_rrs[valid_pixels],
-        "lon": grid_longitudes[valid_pixels],
-        "lat": grid_latitudes[valid_pixels],
+        "rrs": flattened_rrs[valid_pixels],  # (n_lat*n_lon, n_wavelength) -> (n_valid, n_wavelength)
+        "lon": grid_longitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
+        "lat": grid_latitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
         "coverage": coverage,
     }
 
@@ -143,24 +138,6 @@ def build_date_eddy_index(
     return date_index
 
 
-def parse_pace_date(filename: str) -> dt.date | None:
-    """Extract date from a daily PACE L3 filename."""
-    match = PACE_DAILY_RE.search(filename)
-    if match is None:
-        return None
-    return dt.datetime.strptime(match.group(1), "%Y%m%d").date()
-
-
-def parse_pace_date_range(filename: str) -> tuple[dt.date, dt.date] | tuple[None, None]:
-    """Extract start/end dates from an 8-day composite filename."""
-    match = PACE_8DAY_RE.search(filename)
-    if match is None:
-        return None, None
-    start = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
-    end = dt.datetime.strptime(match.group(2), "%Y%m%d").date()
-    return start, end
-
-
 def collect_eddies_for_window(
     date_index: dict[dt.date, list["EddyObs"]],
     start: dt.date,
@@ -182,16 +159,12 @@ def collect_eddies_for_window(
     return [obs for obs, _ in best.values()]
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
-
-
 def main(experiment: str | None = None) -> None:
     """Collocate PACE observations and write one Parquet file per tracked eddy."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     cfg = load_config(experiment)
     collocation_cfg = cfg["collocate_pace"]
@@ -278,20 +251,26 @@ def main(experiment: str | None = None) -> None:
     rows_by_eddy: dict[tuple[int, str], list[np.ndarray]] = defaultdict(list)
     n_matched_files = 0
 
+    pace_8day_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
+    pace_daily_re = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.")
+
     for pace_path in pace_files:
         if temporal_resolution == "8D":
-            window_start, window_end = parse_pace_date_range(pace_path.name)
-            if window_start is None:
+            match = pace_8day_re.search(pace_path.name)
+            if match is None:
                 continue
+            window_start = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
+            window_end = dt.datetime.strptime(match.group(2), "%Y%m%d").date()
             matched_eddies = collect_eddies_for_window(
                 date_index, window_start, window_end
             )
             representative_date = window_start + (window_end - window_start) / 2
             date_label = f"{window_start}..{window_end}"
         else:
-            representative_date = parse_pace_date(pace_path.name)
-            if representative_date is None:
+            match = pace_daily_re.search(pace_path.name)
+            if match is None:
                 continue
+            representative_date = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
             matched_eddies = date_index.get(representative_date, [])
             date_label = str(representative_date)
 
@@ -327,6 +306,7 @@ def main(experiment: str | None = None) -> None:
 
             n_pixels = len(result["lon"])
             days_since_pet_epoch = (representative_date - PET_EPOCH).days
+            # 7x (n_pixels,) + (n_pixels, n_wavelength) -> (n_pixels, 7 + n_wavelength), matching METADATA_COLS + rrs_columns.
             rows = np.column_stack(
                 [
                     np.full(n_pixels, eddy.track_id),
@@ -358,6 +338,7 @@ def main(experiment: str | None = None) -> None:
 
     n_written = 0
     for (track_id, polarity), row_chunks in sorted(rows_by_eddy.items()):
+        # list of (n_pixels_i, 7 + n_wavelength) -> (sum_i n_pixels_i, 7 + n_wavelength)
         observations = pd.DataFrame(np.vstack(row_chunks), columns=columns)
         observations["track_id"] = observations["track_id"].astype(int)
         observations["date"] = (

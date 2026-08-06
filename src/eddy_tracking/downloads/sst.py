@@ -16,17 +16,9 @@ from eddy_tracking.utils.authentication import (
 )
 
 
-_OPENDAP_BASE_URL = "https://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI"
-
-SST_FILENAME_RE = re.compile(
-    r"^AQUA_MODIS\.\d{8}_\d{8}\.L3m\.8D\.SST\.sst\.4km\.nc$"
-)
-
-
 def infer_lat_lon_names(ds: xr.Dataset) -> tuple[str, str]:
     """
-    SST uses 'lat'/'lon', SSS uses 'latitude'/'longitude' - this normalizes
-    both so downstream code does not need to know which product is loaded.
+    SST uses 'lat'/'lon' and SSS uses 'latitude'/'longitude', so this normalizes both and lets the caller stay unaware of which product is loaded.
     """
     lat_name = next((n for n in ("lat", "latitude") if n in ds.coords), None)
     lon_name = next((n for n in ("lon", "longitude") if n in ds.coords), None)
@@ -42,9 +34,11 @@ def subset_to_bbox_ds(
     lat_range: tuple[float, float],
 ) -> None:
     """
-    Handles both ascending and descending latitude coordinates. Calls
-    ``.load()`` before writing because remote xarray datasets need
-    to be materialized before netcdf serialization.
+    Write the lon_range and lat_range subset of ds to output_path as NetCDF, through a ".tmp.nc" sibling renamed into place.
+
+    Handles both ascending and descending latitude coordinates.
+    Calls ``.load()`` before writing because a remote xarray dataset must be in memory before NetCDF serialization.
+    lon_range and lat_range are (low, high) in degrees east and degrees north.
     """
     lat_name, lon_name = infer_lat_lon_names(ds)
     lat_vals = ds[lat_name].values
@@ -73,7 +67,10 @@ def download_aqua_sst_8d_4km(
     """
     Download AQUA MODIS 8-day 4km SST subsets through OPeNDAP.
 
-    Returns the number of new files saved. Skips files already in out_dir.
+    Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule.
+    Skips files already in out_dir.
+    lon_range and lat_range are (low, high) in degrees east and degrees north.
+    Returns the number of new files saved.
     """
     print(
         "status: downloading_sst\n"
@@ -95,11 +92,15 @@ def download_aqua_sst_8d_4km(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Matches a name such as "AQUA_MODIS.20250117_20250124.L3m.8D.SST.sst.4km.nc".
+    sst_filename_re = re.compile(
+        r"^AQUA_MODIS\.\d{8}_\d{8}\.L3m\.8D\.SST\.sst\.4km\.nc$"
+    )
     matches: list[tuple[str, DataGranule]] = []
     for granule in granules:
         for url in granule.data_links():
             filename = url.split("?", 1)[0].rsplit("/", 1)[-1]
-            if SST_FILENAME_RE.match(filename):
+            if sst_filename_re.match(filename):
                 if not (out_dir / filename).exists():
                     matches.append((filename, granule))
                 break
@@ -107,10 +108,24 @@ def download_aqua_sst_8d_4km(
     if not matches:
         return 0
 
+    opendap_base_url = "https://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI"
     saved = 0
     for filename, granule in sorted(matches, key=lambda match: match[0]):
         out_path = out_dir / filename
-        opendap_url = _opendap_url(granule, filename)
+        opendap_url = next(
+            (
+                related_url["URL"]
+                for related_url in granule.get("umm", {}).get("RelatedUrls", [])
+                if related_url.get("Subtype") == "OPENDAP DATA"
+            ),
+            None,
+        )
+        if opendap_url is None:
+            # A granule whose CMR metadata omits the OPENDAP DATA link still resolves under {base}/YYYY/MMDD/filename, such as ".../L3SMI/2025/0117/AQUA_MODIS.20250117_20250124.L3m.8D.SST.sst.4km.nc".
+            start_date = filename.split(".")[1].split("_")[0]
+            opendap_url = (
+                f"{opendap_base_url}/{start_date[:4]}/{start_date[4:8]}/{filename}"
+            )
         with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
             subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
         saved += 1
@@ -118,22 +133,12 @@ def download_aqua_sst_8d_4km(
     return saved
 
 
-def _opendap_url(granule: DataGranule, filename: str) -> str:
-    related_urls = granule.get("umm", {}).get("RelatedUrls", [])
-    for related_url in related_urls:
-        if related_url.get("Subtype") == "OPENDAP DATA":
-            return related_url["URL"]
-
-    start_date = filename.split(".")[1].split("_")[0]
-    return (
-        f"{_OPENDAP_BASE_URL}/{start_date[:4]}/{start_date[4:8]}/{filename}"
-    )
-
-
 def main(experiment: str | None = None) -> None:
     """Download configured SST files."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     from utils.config import load_config, resolve_data_dir
 
@@ -149,12 +154,6 @@ def main(experiment: str | None = None) -> None:
         "status: complete\n"
         f"sst_files_saved: {n_saved}"
     )
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":

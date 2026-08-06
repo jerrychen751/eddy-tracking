@@ -1,15 +1,10 @@
 """
-Compute the per-date background pigment means: the denominator of the eddy
-log-ratio targets.
+Compute the per-date background pigment means: the denominator of the eddy log-ratio targets.
 
-For each PACE composite, background pixels are open-water pixels that are
-both calm (|normalized relative vorticity| < BG_THRESHOLD_ROSSBY, from the
-matching SWOT day) and outside every tracked eddy contour active during the
-window. Their Rrs spectra run through the same SDP model as the eddy pixels,
-and the per-pigment mean over those pixels is the background for that date.
+For each PACE composite, background pixels are open-water pixels that are both calm (|normalized relative vorticity| < 0.1, from the matching SWOT day) and outside every tracked eddy contour active during the window.
+Their Rrs spectra run through the same SDP model as the eddy pixels, and the per-pigment mean over those pixels is the background for that date.
 
-Writes silver/pigments/background/bg_mean.parquet: one row per composite date with
-columns date, bg_mean_<pigment> (13), and n_bg_pixels.
+Writes silver/pigments/background/bg_mean.parquet: one row per composite date with columns date, bg_mean_<pigment> (13), and n_bg_pixels.
 """
 
 import argparse
@@ -35,16 +30,7 @@ from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
 from eddy_tracking.preprocess.sss import read_multiple_sss
 from eddy_tracking.preprocess.sst import read_multiple_sst
 
-PET_EPOCH = dt.date(1950, 1, 1)
-# The DUACS/MIOST source variable is named relative_vorticity, but these files
-# store normalized relative vorticity, not raw zeta in s^-1. The values are
-# Rossby number (Ro = zeta/f), so "calm" water is a direct threshold on |Ro|.
-BG_THRESHOLD_ROSSBY = 0.1
-# Search this many days on either side of a composite's midpoint for a SWOT day.
 SWOT_SEARCH_DAYS = 4
-PACE_8DAY_RE = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
-PACE_DAILY_RE = re.compile(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.")
-SWOT_DATE_RE = re.compile(r"\d{8}")
 
 # on-disk SDP pigment name -> canonical suffix (must match build_gold_table.PIGMENTS)
 PIGMENTS = {
@@ -55,11 +41,6 @@ PIGMENTS = {
 }
 
 
-def resolve_background_dir(experiment: str):
-    """Silver path for pigment background means."""
-    return resolve_output_dir(experiment, "pigments", "background")
-
-
 def parse_args() -> argparse.Namespace:
     """Parse background-stage CLI arguments."""
     parser = argparse.ArgumentParser()
@@ -67,8 +48,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--subsample", type=int, default=2000,
         help="Max background pixels per composite to push through SDP (0 = use all). "
-             "The regional mean is stable well below the full count, so subsampling "
-             "keeps a local run fast; raise it or set 0 for a faithful all-pixel mean.",
+            "The regional mean is stable well below the full count, so subsampling "
+            "keeps a local run fast; raise it or set 0 for a faithful all-pixel mean.",
     )
     parser.add_argument(
         "--limit", type=int, default=0,
@@ -81,18 +62,17 @@ def parse_pace_window(filename: str, temporal_res: str) -> tuple[dt.date, dt.dat
     """
     (repr_date, win_start, win_end) for a PACE file, or None if it doesn't parse.
 
-    repr_date is the join key written to the table; it is computed exactly as in
-    collocate_pace so background and eddy rows share a date. For 8-day composites
-    it is the window midpoint; for daily files all three dates are the same day.
+    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date.
+    For 8-day composites it is the window midpoint; for daily files all three dates are the same day.
     """
     if temporal_res == "8D":
-        m = PACE_8DAY_RE.search(filename)
+        m = re.search(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.", filename)
         if m is None:
             return None
         start = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
         end = dt.datetime.strptime(m.group(2), "%Y%m%d").date()
         return start + (end - start) / 2, start, end
-    m = PACE_DAILY_RE.search(filename)
+    m = re.search(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.", filename)
     if m is None:
         return None
     day = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
@@ -101,9 +81,10 @@ def parse_pace_window(filename: str, temporal_res: str) -> tuple[dt.date, dt.dat
 
 def index_swot_files_by_date(swot_dir: Path) -> dict[dt.date, Path]:
     """Map measurement date (first 8-digit token in the name) to SWOT file path."""
+    swot_date_re = re.compile(r"\d{8}")
     files = {}
     for fp in sorted(swot_dir.glob("*.nc")):
-        m = SWOT_DATE_RE.search(fp.name)
+        m = swot_date_re.search(fp.name)
         if m:
             files[dt.datetime.strptime(m.group(), "%Y%m%d").date()] = fp
     return files
@@ -126,6 +107,7 @@ def load_eddy_contours(
 
     Contours come from both polarities, longitudes converted from py-eddy-tracker's 0-360 convention to PACE's -180/180.
     """
+    pet_epoch = dt.date(1950, 1, 1)
     contours: dict[dt.date, list] = defaultdict(list)
     for track_dir in (cyclone_track_dir, anticyclone_track_dir):
         zarr_path = track_dir / f"{track_dir.name}_tracks.zarr"
@@ -133,7 +115,7 @@ def load_eddy_contours(
             continue
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
         keep = ~tracked.virtual.astype(bool)
-        days = [PET_EPOCH + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
+        days = [pet_epoch + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
         contour_lon = (tracked.contour_lon_s[keep] + 180) % 360 - 180
         contour_lat = tracked.contour_lat_s[keep]
         for i, day in enumerate(days):
@@ -145,10 +127,12 @@ def compute_calm_mask_on_pace(swot_fp, pace_lon: np.ndarray, pace_lat: np.ndarra
     """
     Boolean (lat, lon) PACE-grid mask of calm water for one SWOT day.
 
-    Interpolates |Ro| from the coarser SWOT grid onto the PACE pixels and
-    thresholds it. Pixels saved as NaN in the SWOT bronze file interpolate to
-    NaN and fail the comparison, so they are treated as not-calm.
+    Interpolates |Ro| from the coarser SWOT grid onto the PACE pixels and thresholds it.
+    Pixels saved as NaN in the SWOT bronze file interpolate to NaN and fail the comparison, so they are treated as not-calm.
     """
+    # The DUACS/MIOST source variable is named relative_vorticity, but these files store normalized relative vorticity, not raw zeta in s^-1.
+    # The values are Rossby number (Ro = zeta/f), so "calm" water is a direct threshold on |Ro|.
+    bg_threshold_rossby = 0.1
     swot_lon, swot_lat, rossby_number = load_rossby_field(swot_fp)
     abs_rossby_number = xr.DataArray(
         np.abs(rossby_number),
@@ -158,17 +142,17 @@ def compute_calm_mask_on_pace(swot_fp, pace_lon: np.ndarray, pace_lat: np.ndarra
     on_pace = abs_rossby_number.interp(
         latitude=pace_lat, longitude=pace_lon, method="linear"
     ).values
-    return on_pace < BG_THRESHOLD_ROSSBY
+    return on_pace < bg_threshold_rossby
 
 
 def in_any_contour(
     contours: list[tuple[np.ndarray, np.ndarray]], lons: np.ndarray, lats: np.ndarray
 ) -> np.ndarray:
     """Boolean over the given points: inside at least one eddy contour polygon."""
-    points = np.column_stack([lons, lats])
+    points = np.column_stack([lons, lats])  # (n_points,) + (n_points,) -> (n_points, 2)
     inside = np.zeros(points.shape[0], dtype=bool)
     for contour_lon, contour_lat in contours:
-        polygon = MplPath(np.column_stack([contour_lon, contour_lat]))
+        polygon = MplPath(np.column_stack([contour_lon, contour_lat]))  # (n_vertices,) + (n_vertices,) -> (n_vertices, 2)
         inside |= polygon.contains_points(points)
     return inside
 
@@ -215,9 +199,8 @@ def compute_background_means(
     """
     Run the SDP model on background pixels and average each pigment.
 
-    Mirrors run_sdp.process_eddy: preprocess Rrs to 1 nm, sample nearest SST/SSS,
-    drop pixels missing either, run SDP. Returns bg_mean_<pigment> for the 13
-    pigments plus n_bg_pixels, or None if no pixel survives the SST/SSS filter.
+    Mirrors run_sdp.process_eddy: preprocess Rrs to 1 nm, sample nearest SST/SSS, drop pixels missing either, run SDP.
+    Returns bg_mean_<pigment> for the 13 pigments plus n_bg_pixels, or None if no pixel survives the SST/SSS filter.
     """
     rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
     wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
@@ -234,6 +217,7 @@ def compute_background_means(
     if valid.sum() == 0:
         return None
 
+    # rrs_processed[valid]: (n_pixels, n_wl_1nm) -> (n_valid, n_wl_1nm)
     rrs_frame = pd.DataFrame(
         rrs_processed[valid], columns=wl_processed.astype(int)
     )
@@ -273,7 +257,7 @@ def main(
     pace_dir = resolve_data_dir(cfg, "pace_dir")
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
-    out_dir = resolve_background_dir(experiment)
+    out_dir = resolve_output_dir(experiment, "pigments", "background")
     cyclone_track_dir = resolve_output_dir(experiment, "eddy_track", "cyclone")
     anticyclone_track_dir = resolve_output_dir(experiment, "eddy_track", "anticyclone")
     temporal_res = cfg["collocate_pace"].get("temporal_resolution", "DAY")
@@ -316,13 +300,12 @@ def main(
             wavelengths = ds.coords["wavelength"].values.astype(int)
             rrs = ds["Rrs"].values  # (lat, lon, wavelength)
 
-        lon2d, lat2d = np.meshgrid(pace_lon, pace_lat)
+        lon2d, lat2d = np.meshgrid(pace_lon, pace_lat)  # (n_lon,) + (n_lat,) -> (n_lat, n_lon) each
         calm = compute_calm_mask_on_pace(swot_fp, pace_lon, pace_lat)
-        rrs_flat = rrs.reshape(-1, rrs.shape[-1])
-        all_finite = np.all(np.isfinite(rrs_flat), axis=1)
+        rrs_flat = rrs.reshape(-1, rrs.shape[-1])  # (lat, lon, wavelength) -> (lat*lon, wavelength)
+        all_finite = np.all(np.isfinite(rrs_flat), axis=1)  # (lat*lon, wavelength) -> (lat*lon,)
 
-        # Candidate background pixels: calm and fully observed across all bands.
-        candidate = np.flatnonzero(calm.ravel() & all_finite)
+        candidate = np.flatnonzero(calm.ravel() & all_finite)  # calm (lat, lon) -> (lat*lon,), candidate (n_candidate,) of flat indices
         if candidate.size == 0:
             print(
                 f"date: {repr_date}\n"
@@ -331,7 +314,6 @@ def main(
             )
             continue
 
-        # Drop any candidate falling inside an eddy active during the window.
         window_contours = []
         day = win_start
         while day <= win_end:
@@ -339,7 +321,7 @@ def main(
             day += dt.timedelta(days=1)
         if window_contours:
             inside = in_any_contour(
-                window_contours, lon2d.ravel()[candidate], lat2d.ravel()[candidate]
+                window_contours, lon2d.ravel()[candidate], lat2d.ravel()[candidate]  # (lat, lon) -> (lat*lon,) -> (n_candidate,) each
             )
             candidate = candidate[~inside]
         n_candidate = candidate.size
@@ -357,10 +339,10 @@ def main(
         date_value = pd.Timestamp(repr_date)
         df = pd.DataFrame({
             "date": date_value,
-            "pixel_lon": lon2d.ravel()[candidate],
-            "pixel_lat": lat2d.ravel()[candidate],
+            "pixel_lon": lon2d.ravel()[candidate],  # (lat, lon) -> (lat*lon,) -> (n_candidate,)
+            "pixel_lat": lat2d.ravel()[candidate],  # (lat, lon) -> (lat*lon,) -> (n_candidate,)
         })
-        rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w}" for w in wavelengths])
+        rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w}" for w in wavelengths])  # (lat*lon, wavelength) -> (n_candidate, wavelength)
         df = pd.concat([df, rrs_df], axis=1)
 
         means = compute_background_means(df, sst_df, sss_df)

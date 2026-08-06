@@ -1,15 +1,9 @@
 """
 Weighted NNLS matrix factorization. Ports phytoclass::NNLS_MF and ::NNLS_MF_Final.
 
-Solves S ~ C @ F subject to C >= 0, column-weighted, with C row-normalized
-in the returned "C matrix" but the raw C used for RMSE.
+Solves S ~ C @ F subject to C >= 0, column-weighted. The returned "C matrix" is row-normalized, but the raw C drives the RMSE.
 
-Performance: R's RcppML::nnls solves the normal equations A^T A x = A^T b
-via coordinate descent, reusing A^T A across all samples. scipy.optimize.nnls
-only takes one b at a time and has significant per-call Python overhead, so
-a pure scipy implementation is ~4x slower than necessary. We implement the
-same coordinate-descent-on-normal-equations approach here, vectorized across
-all samples simultaneously.
+scipy.optimize.nnls takes one right-hand side per call, so this module runs coordinate descent on the normal equations instead, vectorized over every sample at once, as R's RcppML::nnls does.
 """
 
 import numpy as np
@@ -29,21 +23,19 @@ def _solve_nnls_batched(
     """
     Solve min ||A x_i - b_i||^2 s.t. x_i >= 0 for every row b_i of B.
 
-    Coordinate descent on the normal equations A^T A x = A^T b with shared
-    A^T A across all samples. Mirrors R's RcppML::nnls(cd_maxit=1000, cd_tol=1e-8).
-
     Args:
-        A: (m, k) - in phytoclass: weighted F transpose (pigments, classes).
-        B: (n, m) - in phytoclass: weighted S (samples, pigments).
+        A: (n_pigments, n_classes) - weighted F, transposed.
+        B: (n_samples, n_pigments) - weighted S.
+        max_iter, tol: defaults mirror R's RcppML::nnls(cd_maxit=1000, cd_tol=1e-8).
 
     Returns:
-        X: (n, k) - non-negative solutions.
+        X: (n_samples, n_classes), every entry non-negative.
     """
-    AtA = A.T @ A
-    AtB = A.T @ B.T
+    AtA = A.T @ A  # (n_pigments, n_classes) -> (n_classes, n_classes)
+    AtB = A.T @ B.T  # (n_pigments, n_classes), (n_samples, n_pigments) -> (n_classes, n_samples)
     k, n_samples = AtB.shape
     X = np.zeros((k, n_samples))
-    diag_AtA = np.diag(AtA).copy()
+    diag_AtA = np.diag(AtA).copy()  # (n_classes, n_classes) -> (n_classes,)
     diag_AtA[diag_AtA == 0] = 1.0
 
     for _ in range(max_iter):
@@ -54,7 +46,7 @@ def _solve_nnls_batched(
         if np.max(np.abs(X - X_prev)) < tol:
             break
 
-    return X.T
+    return X.T  # (n_classes, n_samples) -> (n_samples, n_classes)
 
 
 def nnls_mf(F: np.ndarray, S: np.ndarray, S_weights: np.ndarray | None = None) -> dict:
@@ -62,10 +54,10 @@ def nnls_mf(F: np.ndarray, S: np.ndarray, S_weights: np.ndarray | None = None) -
     Solve S ~ C @ F column-weighted, with NNLS. Mirrors R's NNLS_MF.
 
     Returns dict with keys:
-        F: input F unchanged
-        RMSE: sqrt(mean((S - C_raw @ F)^2)) - raw (not row-normalized) C
-        C: row-normalized C (each row sums to 1), shape (n_samples, n_classes)
-        C_raw: the raw NNLS output before row-normalization (for internal use)
+        F: the input F, unchanged.
+        RMSE: sqrt(mean((S - C_raw @ F)^2)), from the raw C, not the row-normalized one.
+        C: (n_samples, n_classes) with every row summing to 1.
+        C_raw: the NNLS output before row-normalization, for internal use.
     """
     F = np.asarray(F, dtype=float)
     S = np.asarray(S, dtype=float)
@@ -77,7 +69,7 @@ def nnls_mf(F: np.ndarray, S: np.ndarray, S_weights: np.ndarray | None = None) -
     F_weighted = apply_weights(F, S_weights)
     S_weighted = apply_weights(S, S_weights)
 
-    C_raw = _solve_nnls_batched(F_weighted.T, S_weighted)
+    C_raw = _solve_nnls_batched(F_weighted.T, S_weighted)  # F_weighted: (n_classes, n_pigments) -> (n_pigments, n_classes); C_raw: (n_samples, n_classes)
 
     row_sums = C_raw.sum(axis=1, keepdims=True)
     row_sums_safe = np.where(row_sums == 0, 1.0, row_sums)
@@ -98,35 +90,37 @@ def nnls_mf_final(
     """
     Final-step NNLS. Mirrors R's NNLS_MF_Final.
 
-    Normalizes F rows (via normalise_F), then solves NNLS on the row-normalized
-    S, then rescales the resulting C by S_Chl to get per-sample class abundances
-    in absolute units (mg/m^3 Chla).
+    Pass the row-normalized S here, not raw S. S_Chl holds each sample's Tchla, taken before that normalization, in mg/m^3.
 
-    Returns dict with keys F (row-normalized, rescaled to absolute ratios via
-    row_sums), RMSE, condition_number, class_abundances (n_samples, n_classes),
-    MAE, residuals. Callers pass the row-normalized S here, not raw S.
+    Returns dict with keys:
+        F: the input F divided by its Tchla column, so the last column is all 1 and the rows do not sum to 1.
+        RMSE: sqrt(mean(residuals^2)), in the units of the S that was passed in.
+        condition_number: kappa of F @ S.T.
+        class_abundances: (n_samples, n_classes) in mg/m^3 Chla, each row summing to that sample's S_Chl.
+        MAE: (n_pigments,) mean absolute residual per pigment.
+        residuals: S - C_raw @ F.
     """
     F = np.asarray(F, dtype=float)
     S = np.asarray(S, dtype=float)
 
     F_norm, row_sums = normalise_F(F)
-    F_scaled = F_norm * row_sums[:, np.newaxis]
+    F_scaled = F_norm * row_sums[:, np.newaxis]  # row_sums: (n_classes,) -> (n_classes, 1)
 
     F_weighted = apply_weights(F_scaled, S_weights)
     S_weighted = apply_weights(S, S_weights)
 
-    C_raw = _solve_nnls_batched(F_weighted.T, S_weighted)
+    C_raw = _solve_nnls_batched(F_weighted.T, S_weighted)  # F_weighted: (n_classes, n_pigments) -> (n_pigments, n_classes); C_raw: (n_samples, n_classes)
 
     Cn_row_sums = C_raw.sum(axis=1, keepdims=True)
     Cn_row_sums_safe = np.where(Cn_row_sums == 0, 1.0, Cn_row_sums)
     C_normalized = C_raw / Cn_row_sums_safe
-    class_abundances = C_normalized * S_Chl[:, np.newaxis]
+    class_abundances = C_normalized * S_Chl[:, np.newaxis]  # S_Chl: (n_samples,) -> (n_samples, 1)
 
     residuals = S - C_raw @ F_scaled
     rmse = float(np.sqrt(np.mean(residuals ** 2)))
-    mae = np.mean(np.abs(residuals), axis=0)
+    mae = np.mean(np.abs(residuals), axis=0)  # (n_samples, n_pigments) -> (n_pigments,)
 
-    condition_number = float(np.linalg.cond(F_scaled @ S.T))
+    condition_number = float(np.linalg.cond(F_scaled @ S.T))  # (n_classes, n_pigments), (n_pigments, n_samples) -> (n_classes, n_samples)
 
     return {
         "F": F_scaled,

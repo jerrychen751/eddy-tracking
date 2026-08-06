@@ -15,12 +15,12 @@ if TYPE_CHECKING:
 
 
 def login_earthdata() -> earthaccess.Auth:
-    """Ensure a ~/.netrc file exists with NASA Earthdata credentials."""
+    """Log in to NASA Earthdata from ~/.netrc, which the caller must create first."""
     return earthaccess.login(strategy="netrc")
 
 
 def configure_obdaac_opendap_auth() -> None:
-    """Configure netCDF4 authentication for OB.DAAC OPeNDAP access."""
+    """Write a .dodsrc under the system temp dir and point the DAPRCFILE env var at it, so netCDF4 authenticates to OB.DAAC OPeNDAP from ~/.netrc."""
     netrc_path = Path.home() / ".netrc"
     if not netrc_path.exists():
         raise FileNotFoundError(

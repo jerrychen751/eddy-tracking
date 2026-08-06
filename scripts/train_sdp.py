@@ -1,10 +1,7 @@
 """
 Train the SDP pigments model and write coefficient CSVs.
 
-Fits the Kramer et al. (2022) PCA + regression model for 13 pigments and
-saves per-pigment ensemble coefficients to
-`src/eddy_tracking/packages/sdp/coefficients/`, which
-`eddy_tracking.packages.sdp.prediction.run_sdp` then loads at inference time.
+Fits the Kramer et al. (2022) PCA + regression model for 13 pigments and saves per-pigment ensemble coefficients to `src/eddy_tracking/packages/sdp/coefficients/`, which `eddy_tracking.packages.sdp.prediction.run_sdp` then loads at inference time.
 """
 
 import time
@@ -28,9 +25,11 @@ def rrsModelTrain(
     seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame, dict[str, Any]]:
     """
-    Train PCA-based regression model for pigment prediction. One set of coefficients are generated for one pigment at a time.
+    Train PCA-based regression model for pigment prediction.
+    One set of coefficients are generated for one pigment at a time.
 
-    Uses a 75/25 train/validation split with k-fold CV within the training set. For each permutation, the mean k-fold coefficients are unstandardized and validated against the held-out 25%.
+    Uses a 75/25 train/validation split with k-fold CV within the training set.
+    For each permutation, the mean k-fold coefficients are unstandardized and validated against the held-out 25%.
 
     Note: max_pcs must be <= 0.75 * (1 - 1/k) * n_samples.
 
@@ -50,13 +49,11 @@ def rrsModelTrain(
         all_gofs: Dict of per-permutation goodness-of-fit arrays.
     """
 
-    # Cannot contain NaNs in training data for either HPLC or 2nd derivative of Rrs residuals
     if np.isnan(hplc_i).any():
         raise ValueError('hplc_i contains NaN values')
     if np.isnan(RrsD).any():
         raise ValueError('RrsD contains NaN values')
 
-    # RrsD and hplc_i must have 1:1 row correspondence (not necessarily cols)
     if RrsD.shape[0] != hplc_i.shape[0]:
         raise ValueError(
             f'RrsD and hplc_i row count mismatch: {RrsD.shape[0]} vs {hplc_i.shape[0]}'
@@ -64,17 +61,14 @@ def rrsModelTrain(
 
     rng = np.random.default_rng(seed)
 
-    # Create coefficients array: pigment = RrsD @ betas + alpha
-    # pigment is (n_samples) -> n_samples is flattened (lon, lat, time)
-    # RrsD is (n_samples, n_wavelengths)
+    # Model form: pigment = RrsD @ betas + alpha, with one (betas, alpha) pair per permutation.
     mean_betas_nonstd = np.zeros((RrsD.shape[1], n_permutations)) # (n_wavelengths, n_permutations)
     mean_alphas_nonstd = np.zeros(n_permutations)
 
-    # preallocate statistics/metrics arrays
     R2s_final = np.zeros(n_permutations)
     RMSEs_final = np.zeros(n_permutations)
     pct_bias = np.zeros(n_permutations)
-    pct_errors = np.zeros((n_permutations,len(hplc_i)-int(len(hplc_i) * 0.75))) # 25% of the data for validation
+    pct_errors = np.zeros((n_permutations,len(hplc_i)-int(len(hplc_i) * 0.75))) # (n_permutations, n_validate)
     med_pct_error = np.zeros(n_permutations)
     avg_pct_error = np.zeros(n_permutations)
     CI_pct_error = np.zeros(n_permutations)
@@ -82,20 +76,15 @@ def rrsModelTrain(
     mae_final = np.zeros(n_permutations)
 
     for i in range(n_permutations):
-        # Create broad training data (75%) and validation data (25%)
-
         training_indices = rng.permutation(len(hplc_i))[:int(len(hplc_i) * 0.75)]
 
         pigs_training = hplc_i[training_indices]
         RrsD_training = RrsD[training_indices,:]
 
-        # validation data
         pigs_validate = hplc_i
         pigs_validate = np.delete(pigs_validate,training_indices)
         RrsD_validate = RrsD
         RrsD_validate = np.delete(RrsD_validate, training_indices, axis=0)
-
-        # get set up for k-fold cross validation
 
         pig_len = len(pigs_training)
 
@@ -110,15 +99,13 @@ def rrsModelTrain(
             counter_start += pig_len // k
             counter_end += pig_len // k
 
-        # add the leftovers to the CV_indices array, and put NaN's for the sets
-        # where there's not enough leftovers to go around
+        # Only pig_len % k folds get a leftover, so the last slot of the rest stays NaN and the fold loop below drops it.
         leftovers = rand_ns[:n_leftovers]
         na_array = np.full((k - len(leftovers)), np.nan)
-        leftovers = np.concatenate([leftovers, na_array])
+        leftovers = np.concatenate([leftovers, na_array]) # (n_leftovers,) + (k - n_leftovers,) -> (k,)
 
         CV_indices[:, CV_indices.shape[1]-1] = leftovers
 
-        # preallocate arrays
         n_modes_to_use = np.zeros(k, dtype=int)
         betas = np.zeros((RrsD_training.shape[1], k))
         alpha = np.zeros(k)
@@ -126,7 +113,6 @@ def rrsModelTrain(
         CV_RMSEs = np.zeros(k)
 
         for j in range(k):
-            # Split up CV data sets
             these_CV_indices = CV_indices[j, :]
             these_CV_indices = these_CV_indices[~np.isnan(these_CV_indices)].astype(int)
             CV_valid_pigs = pigs_training[these_CV_indices]
@@ -134,19 +120,17 @@ def rrsModelTrain(
             CV_train_pigs = np.delete(pigs_training, these_CV_indices, axis=0)
             CV_train_spec = np.delete(RrsD_training, these_CV_indices, axis=0)
 
-            # standardize spectra for PCs using training statistics only
             train_mean = np.mean(CV_train_spec, axis=0)
             train_std = np.std(CV_train_spec, axis=0)
             CV_train_spec = (CV_train_spec - train_mean) / train_std
             CV_valid_spec = (CV_valid_spec - train_mean) / train_std
 
-            # Manual PCA without centering using SVD
+            # The standardization above already centered the spectra, so the SVD needs no further centering.
             U, S, VT = np.linalg.svd(CV_train_spec, full_matrices=False)
 
-            CV_EOFs_train = VT[:max_pcs].T
-            CV_AFs_train = U[:, :max_pcs] * S[:max_pcs]
+            CV_EOFs_train = VT[:max_pcs].T # (max_pcs, n_wavelengths) -> (n_wavelengths, max_pcs)
+            CV_AFs_train = U[:, :max_pcs] * S[:max_pcs] # (n_train, max_pcs) * (max_pcs,) -> (n_train, max_pcs)
 
-            # Preallocate arrays to hold evaluation metrics
             n_val = len(CV_valid_pigs)
             percent_errors = np.zeros((n_val, CV_AFs_train.shape[1]))
             all_bias = np.zeros((n_val, CV_AFs_train.shape[1]))
@@ -159,23 +143,17 @@ def rrsModelTrain(
             ensemble = np.zeros(CV_AFs_train.shape[1])
             pearson = np.zeros(CV_AFs_train.shape[1])
 
-            # Loop over number of components used in model
             for n_pcs in range(1, CV_AFs_train.shape[1]+1):
-                # Multiple linear regression (MLR) using first n_pcs amplitude functions
                 lin_model = LinearRegression()
                 lin_model.fit(CV_AFs_train[:, :n_pcs], CV_train_pigs)
 
-                # Intercept and coefficients
                 this_alpha = lin_model.intercept_
                 these_betas = lin_model.coef_
 
-                # Map AF coefficients back to spectral domain (EOFs * weights)
-                spec_betas = CV_EOFs_train[:, :n_pcs] @ these_betas
+                spec_betas = CV_EOFs_train[:, :n_pcs] @ these_betas # (n_wavelengths, n_pcs) @ (n_pcs,) -> (n_wavelengths,)
 
-                # Apply model to validation spectra
-                CV_modeled_pigs = CV_valid_spec @ spec_betas + this_alpha
+                CV_modeled_pigs = CV_valid_spec @ spec_betas + this_alpha # (n_val, n_wavelengths) @ (n_wavelengths,) -> (n_val,)
 
-                # Constrain results based on pft_index type
                 if pft_index == 'pigment':
                     CV_modeled_pigs[CV_modeled_pigs < 0] = 0
                 elif pft_index == 'compositions':
@@ -183,29 +161,24 @@ def rrsModelTrain(
                 elif pft_index == 'EOFs':
                     pass  # No constraints applied
 
-                # Compute percent error
-                # Divide by zero happens here if CV_valid_pigs contains zero entries (amount detected is not significant)
-                percent_errors[:n_val, n_pcs-1] = ((CV_valid_pigs - CV_modeled_pigs) / CV_valid_pigs) * 100 # divide by zero here
+                # A CV_valid_pigs entry of zero (pigment below the detection limit) divides by zero here.
+                percent_errors[:n_val, n_pcs-1] = ((CV_valid_pigs - CV_modeled_pigs) / CV_valid_pigs) * 100
                 mean_percent_error[n_pcs-1] = np.mean(np.abs(percent_errors[:, n_pcs-1]))
                 median_percent_error[n_pcs-1] = np.median(np.abs(percent_errors[:, n_pcs-1]))
 
-                # Compute bias
                 all_bias[:n_val, n_pcs-1] = CV_modeled_pigs - CV_valid_pigs
                 bias[n_pcs-1] = np.mean(all_bias[:, n_pcs-1])
                 MAE[n_pcs-1] = np.mean(np.abs(all_bias[:, n_pcs-1]))
 
-                # Correlation and regression metrics
                 reg = LinearRegression()
-                reg.fit(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs)
+                reg.fit(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs) # (n_val,) -> (n_val, 1)
 
-                R2s[n_pcs-1] = reg.score(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs)
+                R2s[n_pcs-1] = reg.score(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs) # (n_val,) -> (n_val, 1)
                 RMSEs[n_pcs-1] = root_mean_squared_error(CV_modeled_pigs, CV_valid_pigs)
                 pearson[n_pcs-1] = np.corrcoef(CV_modeled_pigs, CV_valid_pigs)[0, 1]
 
-                # Ensemble score
                 ensemble[n_pcs-1] = (1 - R2s[n_pcs-1] + RMSEs[n_pcs-1]) / 100
 
-            # Select the best model based on the chosen metric
             if mdl_pick_metric == 'MAE':
                 n_modes_to_use[j] = np.argmin(MAE) + 1
             elif mdl_pick_metric == 'R2':
@@ -222,7 +195,6 @@ def rrsModelTrain(
                     "Must be one of: 'MAE', 'R2', 'RMSE', 'avg', 'med'."
                 )
 
-            # apply your optimized model and record the g.o.f. statistics for this k-th CV:
             X_train = CV_AFs_train[:, :n_modes_to_use[j]]
             y_train = CV_train_pigs
 
@@ -232,12 +204,9 @@ def rrsModelTrain(
             alpha[j] = lin_mdl.intercept_
             these_betas = lin_mdl.coef_
 
-            # now turn model coefficients for AF's into coefficients for the combined
-            # derivative spectra:
-            betas[:, j] = CV_EOFs_train[:, :n_modes_to_use[j]] @ these_betas
+            betas[:, j] = CV_EOFs_train[:, :n_modes_to_use[j]] @ these_betas # (n_wavelengths, n_modes) @ (n_modes,) -> (n_wavelengths,)
 
-            # 5-CV model validation
-            CV_modeled_pigs = CV_valid_spec @ betas[:, j] + alpha[j]
+            CV_modeled_pigs = CV_valid_spec @ betas[:, j] + alpha[j] # (n_val, n_wavelengths) @ (n_wavelengths,) -> (n_val,)
 
             if pft_index == 'pigment':
                 CV_modeled_pigs[CV_modeled_pigs < 0] = 0
@@ -246,34 +215,23 @@ def rrsModelTrain(
             elif pft_index == 'EOFs':
                 pass # No constraints applied
 
-            # fit linear model to look at modeled vs observed
             CV_reg = LinearRegression()
-            CV_reg.fit(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs)
-            CV_R2s[j] = CV_reg.score(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs)
+            CV_reg.fit(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs) # (n_val,) -> (n_val, 1)
+            CV_R2s[j] = CV_reg.score(CV_modeled_pigs.reshape(-1, 1), CV_valid_pigs) # (n_val,) -> (n_val, 1)
             CV_RMSEs[j] = root_mean_squared_error(CV_modeled_pigs, CV_valid_pigs)
 
-        # so now you have k sets of optimized coefficients. grab the
-        # average of them and validate against your original 25% validation
-        # data set.
-
-        # Store mean/std of each set of k-fold CV betas
-        # (the model coefficients for the ith run of the n_permutations):
-        mean_betas = np.mean(betas, axis=1)
+        mean_betas = np.mean(betas, axis=1) # (n_wavelengths, k) -> (n_wavelengths,)
         mean_alphas = np.mean(alpha)
-        std_betas = np.std(betas, axis=1)
+        std_betas = np.std(betas, axis=1) # (n_wavelengths, k) -> (n_wavelengths,)
         std_alphas = np.std(alpha)
 
-        # Compute standard deviation and mean across samples (i.e., along axis 0)
         spec_std = np.std(RrsD_training, axis=0, ddof=0)  # MATLAB default is population std (ddof=0)
-        spec_mean = np.mean(RrsD_training, axis=0)
+        spec_mean = np.mean(RrsD_training, axis=0) # (n_train, n_wavelengths) -> (n_wavelengths,)
 
-        # Unstandardize beta and alpha for model i
         mean_betas_nonstd[:, i] = mean_betas / spec_std
         mean_alphas_nonstd[i] = mean_alphas - np.sum(mean_betas * (spec_mean / spec_std))
 
-        # Validate on the data you set aside previously for this ith run of the n_permutations using mean betas of this
-        # permutation from cross-validation, and store g.o.f stats across permutations:
-        modeled_pigs = RrsD_validate @ mean_betas_nonstd[:,i] + mean_alphas_nonstd[i]
+        modeled_pigs = RrsD_validate @ mean_betas_nonstd[:,i] + mean_alphas_nonstd[i] # (n_validate, n_wavelengths) @ (n_wavelengths,) -> (n_validate,)
 
         if pft_index == 'pigment':
             modeled_pigs[modeled_pigs < 0] = 0
@@ -282,36 +240,29 @@ def rrsModelTrain(
         elif pft_index == 'EOFs':
             pass # No constraints applied
 
-        # Fit linear model
-        model = LinearRegression().fit(modeled_pigs.reshape(-1, 1), pigs_validate)
+        model = LinearRegression().fit(modeled_pigs.reshape(-1, 1), pigs_validate) # (n_validate,) -> (n_validate, 1)
 
-        # Save R² and RMSE
-        R2s_final[i] = model.score(modeled_pigs.reshape(-1, 1), pigs_validate)
-        RMSEs_final[i] = root_mean_squared_error(pigs_validate, model.predict(modeled_pigs.reshape(-1, 1)))
+        R2s_final[i] = model.score(modeled_pigs.reshape(-1, 1), pigs_validate) # (n_validate,) -> (n_validate, 1)
+        RMSEs_final[i] = root_mean_squared_error(pigs_validate, model.predict(modeled_pigs.reshape(-1, 1))) # (n_validate,) -> (n_validate, 1)
 
-        # Avoid division by zero by replacing 0 with 1e-4
+        # A zero pigment value would make the percent errors below divide by zero.
         pigs_validate_safe = np.where(pigs_validate == 0, 1e-4, pigs_validate)
 
-        # Percent bias and errors
         pct_bias[i] = np.mean(((modeled_pigs - pigs_validate_safe) / pigs_validate_safe) * 100)
         pct_errors[i, :] = np.abs(((modeled_pigs - pigs_validate_safe) / pigs_validate_safe) * 100)
         med_pct_error[i] = np.median(pct_errors[i, :])
         avg_pct_error[i] = np.mean(pct_errors[i, :])
 
-        # 95th percentile confidence interval
         sort_pct_errors = np.sort(pct_errors[i, :])
         CI_pct_error[i] = sort_pct_errors[int(np.ceil(0.95 * len(sort_pct_errors))) - 1]
 
-        # Standard deviation of percent error
         std_pct_error[i] = np.std(pct_errors[i, :])
 
-        # Mean absolute error
         mae_final[i] = np.mean(np.abs(modeled_pigs - pigs_validate))
 
     coefficients = mean_betas_nonstd
     intercepts = mean_alphas_nonstd
 
-    # === Summary stats ===
     summary_gofs = [
         np.mean(R2s_final), np.std(R2s_final),
         np.mean(RMSEs_final), np.std(RMSEs_final),
@@ -330,7 +281,6 @@ def rrsModelTrain(
         'Mean_MAE', 'SD_MAE'
     ])
 
-    # === All individual stats ===
     all_gofs = {
         'R2s': R2s_final,
         'RMSEs': RMSEs_final,
@@ -348,28 +298,29 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
     """
     Train SDP model on Rrs residuals and HPLC data.
 
-    Takes 2nd derivative of Rrs residuals, trains model for all 13 pigments using
-    100 permutations, 30 max PCs, 5-fold CV, MAE metric. Saves A (wavelength coefficients,
-    shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in
-    src/eddy_tracking/packages/sdp/coefficients/.
+    Takes 2nd derivative of Rrs residuals, trains model for all 13 pigments using 100 permutations, 30 max PCs, 5-fold CV, MAE metric.
+    Saves A (wavelength coefficients, shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in src/eddy_tracking/packages/sdp/coefficients/.
     """
 
-    # Use the 2nd derivative of the residual as model input
-    diffD2 = np.diff(RrsD, 2, axis=0)
+    diffD2 = np.diff(RrsD, 2, axis=0) # (n_wavelengths, n_samples) -> (n_wavelengths - 2, n_samples)
 
-    n_permutations = 100 # the number of independent model validations to do (each formulates and validates a model)
-    max_pcs = 30 # max number of spectral pc's to incorporate into the model - 30
-    mdl_pick_metric = 'MAE' # pick the metric by which to evaluate pigment model fit - R2, RMSE, avg, med, ens, bias, MAE
+    n_permutations = 100
+    max_pcs = 30
+    mdl_pick_metric = 'MAE' # one of 'MAE', 'R2', 'RMSE', 'avg', 'med'; anything else raises ValueError
     k = 5
     pft_index = 'pigment'
 
-    pigs2mdl = np.array(['Tchla','Zea','DVchla','ButFuco','HexFuco','Allo','MVchlb',
-                         'Neo','Viola','Fuco','Chlc12','Chlc3','Perid'])
+    pigs2mdl = np.array([
+        'Tchla','Zea','DVchla','ButFuco','HexFuco','Allo','MVchlb',
+        'Neo','Viola','Fuco','Chlc12','Chlc3','Perid'
+    ])
 
     # column order of the HPLC dataset passed in as hplc
-    hplc_vars = ['Tchla','Tchlb','Tchlc','ABcaro','ButFuco','HexFuco','Allo','Diadino','Diato',
-                 'Fuco','Perid','Zea','MVchla','DVchla','Chllide','MVchlb','DVchlb','Chlc12','Chlc3',
-                 'Lut','Neo','Viola','Phytin','Phide','Pras']
+    hplc_vars = [
+        'Tchla','Tchlb','Tchlc','ABcaro','ButFuco','HexFuco','Allo','Diadino','Diato',
+        'Fuco','Perid','Zea','MVchla','DVchla','Chllide','MVchlb','DVchlb','Chlc12','Chlc3',
+        'Lut','Neo','Viola','Phytin','Phide','Pras'
+    ]
 
     start = time.time()
 
@@ -384,14 +335,13 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Start modelling
     for i in range(len(pigs2mdl)):
         pigment = pigs2mdl[i]
         pigment_idx = hplc_vars.index(pigment)
         hplc_i = hplc[:, pigment_idx]
+        # diffD2.T: (n_wavelengths - 2, n_samples) -> (n_samples, n_wavelengths - 2)
         coefficients, intercepts, summary_gofs, all_gofs = rrsModelTrain(diffD2.T, hplc_i, pft_index, n_permutations, max_pcs, k, mdl_pick_metric, seed=100)
 
-        # Save coefficients to CSV files in the coefficients folder
         a_filepath = output_dir / f"a_coefs_{pigment}.csv"
         c_filepath = output_dir / f"c_coefs_{pigment}.csv"
         pd.DataFrame(coefficients).to_csv(a_filepath, index=False)

@@ -1,14 +1,13 @@
 """
 Pipeline orchestrator for eddy-tracking experiments.
 
-Runs pipeline stages in the correct order with parallel downloads
-and stage selection for partial re-runs.
+Runs pipeline stages in the correct order with parallel downloads and stage selection for partial re-runs.
 
 Usage:
-    python run_pipeline.py <experiment>                          # gold-table stages
-    python run_pipeline.py <experiment> stage1 stage2 ...        # specific stages
-    python run_pipeline.py <experiment> --from <stage>           # from stage onward
-    python run_pipeline.py <experiment> run_phytoclass           # optional PFT branch
+    python run_pipeline.py <experiment> # gold-table stages
+    python run_pipeline.py <experiment> stage1 stage2 ... # specific stages
+    python run_pipeline.py <experiment> --from <stage> # from stage onward
+    python run_pipeline.py <experiment> run_phytoclass # optional PFT branch
 """
 
 import argparse
@@ -21,8 +20,7 @@ from datetime import datetime
 
 from utils.config import PROJECT_ROOT
 
-# Default stage order for the analysis-ready gold table.
-# Each name matches its script ({stage}.py).
+# A stage name resolves to a module inside _run_stage, or else to <stage>.py at the project root: eddy_id -> eddy_id.py.
 DEFAULT_STAGES = [
     "download_swot",
     "download_pace",
@@ -45,17 +43,7 @@ OPTIONAL_STAGES = [
 # Canonical run order used for explicit stage lists too.
 VALID_STAGES = DEFAULT_STAGES + OPTIONAL_STAGES
 
-# Stages that are independent and can run in parallel
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
-
-_STAGE_MODULES = {
-    "download_swot": ("eddy_tracking.downloads.swot",),
-    "download_pace": ("eddy_tracking.downloads.pace",),
-    "download_sst_sss": (
-        "eddy_tracking.downloads.sst",
-        "eddy_tracking.downloads.sss",
-    ),
-}
 
 
 def _log_stage(action: str, stage: str) -> None:
@@ -70,7 +58,16 @@ def _log_stage(action: str, stage: str) -> None:
 
 def _run_stage(experiment: str, stage: str) -> None:
     """Run one stage as a child process, printing start and completion times."""
-    modules = _STAGE_MODULES.get(stage)
+    # A download stage runs as a module because it lives under src/, not as a <stage>.py script at the project root.
+    stage_modules = {
+        "download_swot": ("eddy_tracking.downloads.swot",),
+        "download_pace": ("eddy_tracking.downloads.pace",),
+        "download_sst_sss": (
+            "eddy_tracking.downloads.sst",
+            "eddy_tracking.downloads.sss",
+        ),
+    }
+    modules = stage_modules.get(stage)
     if modules is not None:
         commands = [
             [sys.executable, "-m", module, experiment]
@@ -202,8 +199,7 @@ def main() -> None:
     selected_stages = set(stages_to_run)
     _run_parallel_downloads(args.experiment, selected_stages)
 
-    # Sequential stages (everything after downloads), in canonical order even
-    # when the user passes an explicit subset.
+    # Run in canonical order even when the user passes an explicit subset in another order.
     sequential_stages = [
         stage for stage in VALID_STAGES if stage not in PARALLEL_STAGES
     ]

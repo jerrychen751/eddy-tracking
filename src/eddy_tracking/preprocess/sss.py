@@ -18,20 +18,19 @@ def read_multiple_sss(fps: Sequence[Path | str]) -> pd.DataFrame:
 
     arrays = []
     for f in files:
-        center = _parse_sss_center_date(f.name)
+        # "SMAP_L3_SSS_20250114_8DAYS_V5.0.nc" carries the center date of its 8-day window.
+        match = re.search(r"SSS_(\d{8})_", f.name)
+        if not match:
+            raise ValueError(f"Cannot parse SSS date from: {f.name}")
+        center = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
         with xr.open_dataset(f) as ds:
+            # (n_lat, n_lon) -> (1, n_lat, n_lon)
             da = ds["smap_sss"].load().expand_dims(time=[np.datetime64(center)])
         arrays.append(da)
 
+    # len(fps) arrays of (1, n_lat, n_lon) -> (len(fps), n_lat, n_lon)
     return (
         xr.concat(arrays, dim="time")
         .to_dataframe(name="smap_sss")
         .sort_index()
     )
-
-
-def _parse_sss_center_date(filename: str) -> dt.date:
-    match = re.search(r"SSS_(\d{8})_", filename)
-    if not match:
-        raise ValueError(f"Cannot parse SSS date from: {filename}")
-    return dt.datetime.strptime(match.group(1), "%Y%m%d").date()

@@ -3,9 +3,8 @@ Download PACE OCI L3 mapped files.
 
 OB.DAAC OPenDAP provides server-side subsetting.
 
-The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc,
-pic, and carbon_phyto. Both use the same granule naming and the same OB.DAAC
-collection pattern, so one download path serves them.
+The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto.
+Both use the same granule naming and the same OB.DAAC collection pattern, so one download path serves them.
 """
 
 from __future__ import annotations
@@ -24,19 +23,15 @@ from eddy_tracking.utils.authentication import (
 )
 
 
-# OB.DAAC Hyrax OPeNDAP root for PACE L3 mapped products, used to build a URL
-# when a granule's CMR metadata omits its OPENDAP DATA link (see download loop).
-_DOWNLOAD_BASE_URL = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
-
-
 def search_pace_l3_granules(
     date_range: tuple[str, str],
     temporal_res: str = "DAY",
     product: str = "AOP",
 ) -> dict[str, tuple[str, object]]:
     """
-    Search CMR for PACE L3 granules of one product in a date range and filter to
-    matching temporal resolution and 4km. Returns {date_key: (filename, granule)}.
+    Search CMR for PACE L3 granules of one product in a date range and filter to matching temporal resolution and 4km.
+
+    Returns {date_key: (filename, granule)}, where date_key is the granule start date "20240929" and filename is "PACE_OCI.20240929_20241006.L3m.8D.BGC.V3_2.4km.nc".
     """
     # The version segment stays open so a new reprocessing does not break the match.
     granule_pattern = {
@@ -67,9 +62,10 @@ def _subset_and_save(
     lat_range: tuple[float, float],
 ) -> None:
     """
-    L3 latitude runs 90→-90 (descending), so lat slice goes high-to-low.
-    Drops 'palette' (visualization artifact). Writes with zlib level 4
-    and atomic rename.
+    L3 latitude runs 90 to -90 (descending), so the lat slice goes high-to-low.
+
+    Drops 'palette' (visualization artifact).
+    Writes with zlib level 4 and atomic rename.
     """
     subset = ds.sel(
         lat=slice(lat_range[1], lat_range[0]),
@@ -94,12 +90,17 @@ def download_pace_l3(
 ) -> tuple[int, int, int]:
     """
     Search + download PACE L3 granules matching date_range, temporal_res, and product.
-    Skips files already in out_dir. Returns (saved, skipped, errors).
+
+    Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule.
+    Skips files already in out_dir.
+    lon_range and lat_range are (low, high) in degrees east and degrees north.
+    Returns (saved, skipped, errors).
     """
     login_earthdata()
     configure_obdaac_opendap_auth()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    download_base_url = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
 
     matches = search_pace_l3_granules(date_range, temporal_res, product)
     print(
@@ -116,20 +117,20 @@ def download_pace_l3(
             skipped += 1
             continue
         try:
-            # OB.DAAC serves every granule via OPeNDAP; opening that URL and
-            # subsetting transfers only the ROI hyperslab (~42 MB gzipped)
-            # instead of the full global granule (~2.3 GB). Prefer the OPENDAP
-            # DATA link in the granule's CMR metadata; recent granules are on
-            # the Hyrax server but sometimes omit that link, so fall back to the
-            # stable {base}/YYYY/MMDD/filename pattern.
             opendap_url = next(
-                (ru["URL"] for ru in granule.get("umm", {}).get("RelatedUrls", [])
-                 if ru.get("Subtype") == "OPENDAP DATA"),
+                (
+                    ru["URL"]
+                    for ru in granule.get("umm", {}).get("RelatedUrls", [])
+                    if ru.get("Subtype") == "OPENDAP DATA"
+                ),
                 None,
             )
             if opendap_url is None:
-                start = filename.split(".")[1]  # PACE_OCI.<start>_<end>.L3m...
-                opendap_url = f"{_DOWNLOAD_BASE_URL}/{start[:4]}/{start[4:8]}/{filename}"
+                # Recent granules sit on Hyrax but omit the OPENDAP DATA link, so build the stable {base}/YYYY/MMDD/filename URL instead.
+                # Field 1 of the filename is "20240929_20241006" for 8D and "20240929" for DAY, so its first 8 characters give the start date either way.
+                start = filename.split(".")[1]
+                opendap_url = f"{download_base_url}/{start[:4]}/{start[4:8]}/{filename}"
+            # Subsetting over OPeNDAP transfers only the ROI hyperslab (~42 MB gzipped) instead of the full global granule (~2.3 GB).
             with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
                 _subset_and_save(ds, out_path, lon_range, lat_range)
             size_mb = out_path.stat().st_size / (1024 * 1024)
@@ -154,7 +155,9 @@ def download_pace_l3(
 def main(experiment: str | None = None) -> None:
     """Download and save PACE files, exiting if any date fails."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     from utils.config import load_config, resolve_data_dir
 
@@ -182,12 +185,6 @@ def main(experiment: str | None = None) -> None:
     )
     if n_errors:
         raise SystemExit(f"{n_errors} date(s) failed to download")
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":

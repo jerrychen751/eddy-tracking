@@ -1,8 +1,7 @@
 """
 Identify eddies in daily SWOT L4 SSH files in parallel.
 
-For each daily NetCDF, subsets to the configured lon/lat region, applies a
-Bessel high-pass filter on ADT, and runs PET contour-based identification.
+For each daily NetCDF, subsets to the configured lon/lat region, applies a Bessel high-pass filter on ADT, and runs PET contour-based identification.
 Writes per-day cyclonic and anticyclonic eddy observation files to eddy_id/.
 """
 
@@ -17,17 +16,6 @@ import xarray as xr
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
 
-# Correspondances takes a sorted list of files, so naming should be in YYYY-MM-DD format.
-# Use separate naming prefixes for cyclonic/anticyclonic
-
-
-def parse_file_datetime(input_path: Path) -> datetime:
-    """Parse the first YYYYMMDD token in a SWOT filename."""
-    match = re.search(r"(\d{8})", input_path.name)
-    if not match:
-        raise ValueError(f"No 8-digit date in filename: {input_path.name}")
-    return datetime.strptime(match.group(1), "%Y%m%d")
-
 
 def resolve_eddy_output_paths(
     anticyclone_dir: Path, cyclone_dir: Path, date: datetime
@@ -35,10 +23,9 @@ def resolve_eddy_output_paths(
     """
     Explicit PET output paths for one identification date.
 
-    This intentionally bypasses py-eddy-tracker's CLI filename template path,
-    whose upstream ``date.strftime("%(path)s/%(sign_type)s_...")`` handling
-    consumes the placeholders before ``write_file()`` can substitute them.
+    This intentionally bypasses py-eddy-tracker's CLI filename template path, whose upstream ``date.strftime("%(path)s/%(sign_type)s_...")`` handling consumes the placeholders before ``write_file()`` can substitute them.
     """
+    # eddy_track.py feeds these files to PET Correspondances in sorted order, so the date must sort chronologically as a string: Anticyclonic_2024-01-15.nc.
     return (
         anticyclone_dir / f"Anticyclonic_{date:%Y-%m-%d}.nc",
         cyclone_dir / f"Cyclonic_{date:%Y-%m-%d}.nc",
@@ -59,8 +46,7 @@ def identify_one(
     """
     Identify eddies in a single SWOT L4 SSH file.
 
-    Subsets to region, applies Bessel high-pass filter, then runs
-    PET's contour-based identification on ADT.
+    Subsets to region, applies Bessel high-pass filter, then runs PET's contour-based identification on ADT.
     """
     if anticyclone_output_path.exists() and cyclone_output_path.exists():
         return anticyclone_output_path, cyclone_output_path
@@ -72,9 +58,8 @@ def identify_one(
         EddiesObservations,
     )
 
-    # Read coordinates first to compute index slices, then re-open via
-    # RegularGridDataset. The double open is necessary because PET's
-    # RegularGridDataset takes a filename + index dict, not an open dataset.
+    # Read coordinates first to compute index slices, then re-open via RegularGridDataset.
+    # The double open is necessary because PET's RegularGridDataset takes a filename + index dict, not an open dataset.
     with xr.open_dataset(input_path) as dataset:
         longitude_min, longitude_max = longitude_range
         latitude_min, latitude_max = latitude_range
@@ -145,13 +130,15 @@ def main(experiment: str | None = None) -> None:
         )
         return
 
-    # CPU-bound (Bessel filter + contour detection) - ThreadPoolExecutor would
-    # serialize due to the GIL; must use ProcessPoolExecutor here
+    # CPU-bound (Bessel filter + contour detection) - ThreadPoolExecutor would serialize due to the GIL; must use ProcessPoolExecutor here.
     n_failed = 0
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         for input_path in input_paths:
-            date = parse_file_datetime(input_path)
+            match = re.search(r"(\d{8})", input_path.name)
+            if not match:
+                raise ValueError(f"No 8-digit date in filename: {input_path.name}")
+            date = datetime.strptime(match.group(1), "%Y%m%d")
             anticyclone_path, cyclone_path = resolve_eddy_output_paths(
                 anticyclone_dir, cyclone_dir, date
             )

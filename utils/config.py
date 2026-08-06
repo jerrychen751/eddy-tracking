@@ -8,8 +8,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Metadata columns shared by collocate_pace, run_sdp, and run_phytoclass.
-# Any change to the collocation output schema must be reflected here.
+# Column order is positional: it must match the np.column_stack order in collocate_pace.py and the enumerate-insert loops in run_sdp.py and run_phytoclass.py.
 METADATA_COLS: list[str] = [
     "track_id", "date", "pixel_lon", "pixel_lat",
     "center_lon", "center_lat", "coverage",

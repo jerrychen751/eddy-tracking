@@ -1,9 +1,7 @@
 """
 Simulated annealing F matrix optimization. Ports phytoclass::simulated_annealing.
 
-Matches the R implementation modulo RNG differences (R's Mersenne Twister vs
-numpy's PCG64) - the algorithm is byte-for-byte equivalent, but trajectories
-differ because the random draws differ.
+The algorithm follows R step for step, but the two runs take different trajectories because R draws from Mersenne Twister and numpy draws from PCG64.
 """
 
 import numpy as np
@@ -25,11 +23,10 @@ def _compute_place_coords(F_no_tchla: np.ndarray) -> tuple[np.ndarray, np.ndarra
     """
     Return (flat_indices, rows, cols) for non-zero entries in column-major order.
 
-    flat_indices matches R's `place <- which(F > 0)` (0-indexed here, 1-indexed
-    in R). rows/cols are the corresponding (row, col) coordinate arrays.
+    flat_indices matches R's `place <- which(F > 0)`, 0-indexed here and 1-indexed in R.
     """
     n_rows = F_no_tchla.shape[0]
-    flat_F = F_no_tchla.flatten(order="F")
+    flat_F = F_no_tchla.flatten(order="F")  # (n_classes, n_pigments - 1) -> (n_classes * (n_pigments - 1),)
     flat_indices = np.flatnonzero(flat_F)
     rows = flat_indices % n_rows
     cols = flat_indices // n_rows
@@ -53,35 +50,29 @@ def simulated_annealing(
     Mirrors R's simulated_annealing() with these fixed choices:
         - niter = 500 SA iterations
         - step = 0.009, giving temperature schedule Temp = (1 - step)^k = 0.991^k
-        - 120 random neighbors per iteration, bumped to 360 in the final 20
+        - 120 random neighbors per iteration, 300 in the final 20
         - Steepest descent loop count: 10 when Temp > 0.3 else 2
-        - Metropolis acceptance: exp(-(f_n_err - f_c_err)) < uniform(0, 1),
-          with NO temperature division (matches R, not textbook SA)
+        - Metropolis acceptance: exp(-(f_n_err - f_c_err)) < uniform(0, 1), with NO temperature division, which matches R and not textbook SA
         - Weighted NNLS, Tchla weight forced to 1
-        - Binary initial F (all non-zero entries → 1)
+        - Binary initial F (every non-zero entry -> 1)
 
     Args:
-        S: sample matrix (n_samples, n_pigments), Tchla MUST be the last column.
-           DataFrame or ndarray. Row-normalization is applied inside this
-           function - pass raw concentrations.
-        Fmat: pigment-to-Tchla ratio matrix (n_classes, n_pigments) with the
-            same column order as S and row labels for phytoplankton classes.
-            DataFrame preferred so class and pigment names are preserved.
-        user_defined_min_max: DataFrame with columns Class, Pig_Abbrev, min,
-            max. One row per non-zero (class, pigment) pair in Fmat. Tchla
-            rows are ignored.
+        S: sample matrix (n_samples, n_pigments), Tchla MUST be the last column. Must be a DataFrame; anything else raises TypeError. Pass raw concentrations, because row-normalization happens inside this function.
+        Fmat: pigment-to-Tchla ratio matrix (n_classes, n_pigments) with the same column order as S and row labels for phytoplankton classes. Must be a DataFrame; a non-DataFrame raises TypeError.
+        user_defined_min_max: DataFrame with columns Class, Pig_Abbrev, min, max. One row per non-zero (class, pigment) pair in Fmat. Tchla rows are ignored.
+        do_matrix_checks: run matrix_checks on (S, Fmat) first, which can drop pigment columns and class rows.
         niter, step, weight_upper_bound: SA hyperparameters (match R defaults).
         seed: numpy RNG seed. Hermetic (not affected by external numpy state).
         verbose: print per-iteration progress if True.
 
     Returns dict with keys matching R's output:
-        F: final (row-normalized) F matrix as DataFrame
-        RMSE: final reconstruction RMSE
+        F: DataFrame of the best F divided by its Tchla column, so the last column is all 1 and the rows do not sum to 1
+        RMSE: final reconstruction RMSE, in row-normalized S units
         condition_number: kappa of Fn @ S^T
         class_abundances: DataFrame of absolute class abundances (mg/m^3 Chla)
-        MAE: per-pigment mean absolute error
-        residuals: S - C @ F residual matrix
-        rmse_history: list of best-so-far RMSE at each iteration (Python addition)
+        MAE: per-pigment mean absolute error, in row-normalized S units
+        residuals: S - C @ F residual matrix, in row-normalized S units
+        rmse_history: best-so-far RMSE at each iteration, length niter + 1
     """
     if not isinstance(S, pd.DataFrame):
         raise TypeError("S must be a DataFrame with pigment column names.")
@@ -106,13 +97,13 @@ def simulated_annealing(
 
     rng = np.random.default_rng(seed)
 
-    S_Chl = S[:, -1].copy()
+    S_Chl = S[:, -1].copy()  # (n_samples, n_pigments) -> (n_samples,)
     S_normalized = normalise_S(S)
     S_weights = bounded_weights(S_normalized, weight_upper_bound)
 
     Fmat_binary = (Fmat > 0).astype(float)
 
-    Fd_binary = Fmat_binary[:, :-1]
+    Fd_binary = Fmat_binary[:, :-1]  # (n_classes, n_pigments) -> (n_classes, n_pigments - 1)
     place_flat, vary_rows, vary_cols = _compute_place_coords(Fd_binary)
 
     min_vec_bounds, max_vec_bounds = default_min_max(
@@ -156,7 +147,7 @@ def simulated_annealing(
         )
         f_n = new_neighbour["F"]
 
-        f_n_vect = f_n[vary_rows, vary_cols]
+        f_n_vect = f_n[vary_rows, vary_cols]  # (n_classes, n_pigments) -> (n_vary,)
         oob_idx = np.where((f_n_vect < minF) | (f_n_vect > maxF))[0]
 
         while len(oob_idx) > 0:
@@ -171,13 +162,13 @@ def simulated_annealing(
                 D2_list.append(temp_rand)
                 Dn2[i] = temp_rand["RMSE"]
 
-            combined_Dn = np.concatenate([Dn, Dn2])
+            combined_Dn = np.concatenate([Dn, Dn2])  # (num_loop,), (num_loop,) -> (2 * num_loop,)
             combined_D = D_list + D2_list
             best_idx = int(np.argmin(combined_Dn))
             new_neighbour = combined_D[best_idx]
             f_n = new_neighbour["F"]
 
-            f_n_vect = f_n[vary_rows, vary_cols]
+            f_n_vect = f_n[vary_rows, vary_cols]  # (n_classes, n_pigments) -> (n_vary,)
             oob_idx = np.where((f_n_vect < minF) | (f_n_vect > maxF))[0]
 
         f_n_err = new_neighbour["RMSE"]

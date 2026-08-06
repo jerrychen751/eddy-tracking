@@ -13,7 +13,6 @@ from eddy_tracking.packages.sdp.physics import (
 )
 from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
 
-# Coefficient directory located alongside this module
 _COEFF_DIR = Path(__file__).resolve().parent / "coefficients"
 _PIGMENT_DISPLAY_NAMES = {
     "Tchla": "T chla",
@@ -46,26 +45,23 @@ def run_sdp(
     Computes Rrs residuals, takes 2nd derivative, then applies ensemble of 100 model permutations. Takes median over permutations. Negative predictions clipped to zero.
 
     Args:
-        rrs: DataFrame with integer wavelength columns (400..700), each row is a spectrum.
-        wl: 1D wavelength array matching the DataFrame columns.
-        sst: Sea surface temperature array, one value per spectrum.
-        sss: Sea surface salinity array, one value per spectrum.
+        rrs: Above-surface remote-sensing reflectance in sr^-1, with integer wavelength columns (400..700), each row is a spectrum.
+        wl: 1D wavelength array in nm matching the DataFrame columns.
+        sst: Sea surface temperature in Celsius, one value per spectrum.
+        sss: Sea surface salinity in PSU, one value per spectrum.
         pigments: List of pigment names to predict, or None for all 13.
 
     Available pigments: Tchla, Zea, DVchla, ButFuco, HexFuco, Allo, MVchlb, Neo, Viola, Fuco, Chlc12, Chlc3, Perid.
 
     Returns:
-        DataFrame with predicted concentrations (ug/L).
+        DataFrame of concentrations in ug/L, one row per input spectrum and one column per requested pigment, labeled with the display name (Chlc12 becomes "chl c1+c2").
     """
 
-    # All 13 pigments that were trained (from Kramer_Rrs_pigments.py)
     all_available_pigments = list(_PIGMENT_DISPLAY_NAMES)
 
-    # Use all pigments if none specified, otherwise use the requested ones
     if pigments is None:
         sdp_names = all_available_pigments.copy()
     else:
-        # Validate requested pigments
         invalid_pigments = [p for p in pigments if p not in all_available_pigments]
         if invalid_pigments:
             raise ValueError(
@@ -74,7 +70,6 @@ def run_sdp(
             )
         sdp_names = pigments.copy()
 
-    # Check if model coefficients exist before processing
     missing_coeffs = []
     for name in sdp_names:
         a_file = _COEFF_DIR / f'a_coefs_{name}.csv'
@@ -89,8 +84,8 @@ def run_sdp(
             f"Copy the coefficient CSVs from the rrs-SDP-pigments repo."
         )
 
-    rrs_residuals = get_rrs_residuals(rrs, sst, sss, wl)[1]
-    rrs_residuals_d2 = np.diff(rrs_residuals, 2, axis=0).T
+    rrs_residuals = get_rrs_residuals(rrs, sst, sss, wl)[1]  # element 1 is RrsD, the above-surface residual
+    rrs_residuals_d2 = np.diff(rrs_residuals, 2, axis=0).T  # (n_wavelengths, n_samples) differenced twice over wavelength -> (n_wavelengths - 2, n_samples) -> (n_samples, n_wavelengths - 2)
 
     sdp = np.zeros((rrs_residuals_d2.shape[0], len(sdp_names)))
 
@@ -104,14 +99,11 @@ def run_sdp(
 
         a_coefs, c_coefs = _load_coefficients(name)
 
-        # Matrix multiplication to compute all runs at once for all samples
-        # Result: run_vals_all shape (n_samples, 100)
+        # (n_samples, n_wavelengths - 2) @ (n_wavelengths - 2, n_runs) -> (n_samples, n_runs)
         run_vals_all = rrs_residuals_d2 @ a_coefs + c_coefs
 
-        # Take median over runs axis (axis=1)
         median_run = np.median(run_vals_all, axis=1)
 
-        # Enforce non-negative
         median_run[median_run < 0] = 0
 
         sdp[:, p] = median_run
@@ -124,8 +116,8 @@ def run_sdp(
 def _load_coefficients(pigment: str) -> tuple[np.ndarray, np.ndarray]:
     a_file = _COEFF_DIR / f"a_coefs_{pigment}.csv"
     c_file = _COEFF_DIR / f"c_coefs_{pigment}.csv"
-    a_coefs = pd.read_csv(a_file).values  # shape: (n_wl, 100)
-    c_coefs = pd.read_csv(c_file).values.flatten()  # shape: (100,)
+    a_coefs = pd.read_csv(a_file).values  # (n_wavelengths - 2, n_runs), 299 x 100 on the 1 nm 400-700 grid
+    c_coefs = pd.read_csv(c_file).values.flatten()  # (n_runs, 1) -> (n_runs,)
     return a_coefs, c_coefs
 
 
@@ -137,9 +129,11 @@ def run_sdp_on_pace_l2(
     """
     Predict 13 pigments for each PACE Level-2 pixel.
 
-    The result preserves all input rows and columns.
-    It adds sea surface temperature (SST), sea surface salinity (SSS), pigment values, and `sdp_status`.
-    Invalid inputs keep missing pigment values.
+    pace_pixels needs `datetime`, `latitude`, and `longitude` columns, and `wavelengths_nm` and `rrs_columns` in its `attrs`. sst_grid and sss_grid are the nearest-neighbor sources that sample_ancillary describes.
+
+    The result preserves all input rows and columns. It adds `sst` in Celsius, `sss` in PSU, one column per pigment in ug/L, and `sdp_status`.
+
+    `sdp_status` is "predicted" where the row carries pigment values, "invalid_rrs" where the spectrum has fewer than 2 finite Rrs values or preprocessing returns a non-finite value, "missing_ancillary" where the SST or SSS grid has no value at the pixel, and "gsm_nonconvergent" where the GSM inversion hits the scipy.optimize.fmin limits. The last three keep NaN pigment values.
     """
     wavelengths_nm, rrs_columns = _read_pace_spectral_schema(pace_pixels)
     required_columns = ("datetime", "latitude", "longitude")
@@ -180,7 +174,7 @@ def run_sdp_on_pace_l2(
     )
 
     raw_rrs = pace_pixels.loc[:, rrs_columns].to_numpy(dtype=float)
-    preprocessable = np.isfinite(raw_rrs).sum(axis=1) >= 2
+    preprocessable = np.isfinite(raw_rrs).sum(axis=1) >= 2  # CubicSpline in preprocess_rrs_spectrum needs 2 finite points
     preprocessable_positions = np.flatnonzero(preprocessable)
 
     if len(preprocessable_positions):
@@ -299,7 +293,7 @@ def _add_sdp_columns(
     result["sdp_status"] = status
     for column, values in zip(
         SDP_PIGMENT_COLUMNS,
-        pigments.T,
+        pigments.T,  # (n_rows, n_pigments) -> (n_pigments, n_rows)
         strict=True,
     ):
         result[column] = values

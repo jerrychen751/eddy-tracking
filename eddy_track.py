@@ -1,9 +1,7 @@
 """
 Track eddies across daily identification files using PET Correspondances.
 
-Builds frame-to-frame eddy correspondences from the daily .nc files produced
-by eddy_id.py, applies the configured minimum track duration, interpolates
-virtual observations, smooths positions, and writes merged tracks to Zarr.
+Builds frame-to-frame eddy correspondences from the daily .nc files produced by eddy_id.py, applies the configured minimum track duration, interpolates virtual observations, smooths positions, and writes merged tracks to Zarr.
 """
 
 import argparse
@@ -85,16 +83,12 @@ def track(
     )
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
-
-
 def main(experiment: str | None = None) -> None:
     """Track both polarities for an experiment and write their Zarr datasets."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     cfg = load_config(experiment)
     tracking_cfg = cfg["eddy_track"]

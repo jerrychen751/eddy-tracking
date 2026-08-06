@@ -1,10 +1,8 @@
 """
 Run Phytoclass PFT decomposition on SDP pigment outputs.
 
-Processes each eddy independently in parallel: loads its pigment Parquet file,
-runs SA + NNLS, and writes a per-eddy PFT Parquet file.
-Eddies are sorted largest-first so the long-running ones start early and
-smaller eddies fill in the remaining workers as they free up.
+Processes each eddy independently in parallel: loads its pigment Parquet file, runs SA + NNLS, and writes a per-eddy PFT Parquet file.
+Eddies are sorted largest-first so the long-running ones start early and smaller eddies fill in the remaining workers as they free up.
 """
 
 import argparse
@@ -138,16 +136,12 @@ def process_polarity(
     return n_written
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
-
-
 def main(experiment: str | None = None) -> None:
     """Run PFT decomposition for both polarities and write missing outputs."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     cfg = load_config(experiment)
     model_cfg = cfg["phytoclass"]

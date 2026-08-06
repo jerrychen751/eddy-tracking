@@ -1,14 +1,12 @@
 """
-Find the Gulf Stream jet-core axis per date from SWOT SSH, and classify each
-eddy track's movement relative to it.
+Find the Gulf Stream jet-core axis per date from SWOT SSH, and classify each eddy track's movement relative to it.
 
-The axis is an ordered streamline traced through the fastest Gulf Stream core
-flow in the Gulf Stream latitude band. Movement (NN/NS/SN/SS) compares an
-eddy's geographic side of the axis (north/south) at birth vs death.
+The axis is an ordered streamline traced through the fastest Gulf Stream core flow in the Gulf Stream latitude band.
+Movement (NN/NS/SN/SS) compares an eddy's geographic side of the axis (north/south) at birth vs death.
 
 Outputs to silver/gulf_stream/:
-  - streamline.parquet     one row per ordered centerline point: date, point_idx, lon, lat
-  - eddy_movement.parquet  one row per (polarity, track_id): movement class + sides
+  - streamline.parquet holds one row per ordered centerline point: date, point_idx, lon, lat
+  - eddy_movement.parquet holds one row per (polarity, track_id): movement class + sides
 """
 
 import argparse
@@ -24,31 +22,14 @@ from scipy.ndimage import uniform_filter
 
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
 
-PET_EPOCH = dt.date(1950, 1, 1)
-# The Gulf Stream core stays well inside this latitude band within the ROI;
-# restricting the search keeps the line off coastal/subpolar currents.
-GS_LAT_BAND = (32.0, 43.0)
-SPEED_THRESHOLD_PERCENTILE = 70
-SEED_WINDOW = 5  # box width (cells) for the coherent-flow seed; ~70 km at 1/8 deg
-STREAMLINE_STEP_KM = 5.0
-MAX_GAP_STEPS = 10
-MAX_TRACE_STEPS = 2000
-LOOP_MIN_POINTS = 40
-LOOP_SKIP_RECENT_POINTS = 30
 KM_PER_DEG_LAT = 111.0
-
-
-def parse_file_date(fp: Path) -> dt.date:
-    """Parse the first YYYYMMDD token in a SWOT filename."""
-    return dt.datetime.strptime(re.search(r"\d{8}", fp.name).group(), "%Y%m%d").date()
 
 
 class GulfStreamCenterline:
     """
     Ordered Gulf Stream centerline points.
 
-    The points are stored in streamline order, not sorted by longitude. This
-    allows meanders and repeated longitude values.
+    The points are stored in streamline order, not sorted by longitude. This allows meanders and repeated longitude values.
     """
 
     def __init__(self, lon: np.ndarray, lat: np.ndarray) -> None:
@@ -66,7 +47,7 @@ class GulfStreamCenterline:
         vgos: np.ndarray,
         lon: np.ndarray,
         lat: np.ndarray,
-        speed_threshold_percentile: int = SPEED_THRESHOLD_PERCENTILE,
+        speed_threshold_percentile: int = 70,
     ) -> "GulfStreamCenterline":
         """
         Trace the Gulf Stream core by following the local surface-current direction.
@@ -81,21 +62,30 @@ class GulfStreamCenterline:
         u_at = RegularGridInterpolator((lat, lon), ugos, bounds_error=False, fill_value=np.nan)
         v_at = RegularGridInterpolator((lat, lon), vgos, bounds_error=False, fill_value=np.nan)
 
-        # Seed from the strongest *coherent* flow rather than the single fastest pixel: the cell with the highest mean speed over a fully-finite SEED_WINDOW box.
+        # Seed from the strongest *coherent* flow rather than the single fastest pixel: the cell with the highest mean speed over a fully-finite seed_window box.
         # This avoids lone coastal spikes whose NaN neighbours would make the interpolator return NaN at the seed and end the trace on its first step.
+        seed_window = 5  # box width (cells) for the coherent-flow seed; ~70 km at 1/8 deg
         finite = np.isfinite(speed)
-        box = SEED_WINDOW * SEED_WINDOW
-        finite_in_box = uniform_filter(finite.astype(float), SEED_WINDOW, mode="constant") * box
-        local_mean = uniform_filter(np.where(finite, speed, 0.0), SEED_WINDOW, mode="constant") * box / np.maximum(finite_in_box, 1.0)
+        box = seed_window * seed_window
+        finite_in_box = uniform_filter(finite.astype(float), seed_window, mode="constant") * box
+        local_mean = uniform_filter(np.where(finite, speed, 0.0), seed_window, mode="constant") * box / np.maximum(finite_in_box, 1.0)
         seed_score = np.where(finite_in_box >= box - 0.5, local_mean, -np.inf)
         if seed_score.max() <= 0:
             return cls(np.array([]), np.array([]))
+        # flat argmax over seed_score (n_lat, n_lon) -> (lat_idx, lon_idx)
         origin_lat_idx, origin_lon_idx = np.unravel_index(
             np.argmax(seed_score), speed.shape
         )
+        # origin, point, and every path row are (2,) holding (lat, lon) in degrees.
         origin = np.array(
             [lat[origin_lat_idx], lon[origin_lon_idx]], dtype=float
         )
+
+        streamline_step_km = 5.0
+        max_gap_steps = 10
+        max_trace_steps = 2000
+        loop_min_points = 40
+        loop_skip_recent_points = 30
 
         def trace(direction: int) -> list[np.ndarray]:
             point = origin.copy()
@@ -103,7 +93,7 @@ class GulfStreamCenterline:
             gap = 0
             last_strong = -1
 
-            for _ in range(MAX_TRACE_STEPS):
+            for _ in range(max_trace_steps):
                 u = float(u_at([point])[0])
                 v = float(v_at([point])[0])
                 spd = float(np.hypot(u, v))
@@ -116,23 +106,24 @@ class GulfStreamCenterline:
                     last_strong = len(path) - 1
                 else:
                     gap += 1
-                    if gap > MAX_GAP_STEPS:
+                    if gap > max_gap_steps:
                         break
 
                 point = point + np.array([
-                    STREAMLINE_STEP_KM / KM_PER_DEG_LAT * direction * v / spd,
-                    STREAMLINE_STEP_KM
+                    streamline_step_km / KM_PER_DEG_LAT * direction * v / spd,
+                    streamline_step_km
                     / (KM_PER_DEG_LAT * np.cos(np.radians(point[0])))
                     * direction * u / spd,
                 ])
 
                 if not (lat.min() <= point[0] <= lat.max() and lon.min() <= point[1] <= lon.max()):
                     break
-                if len(path) > LOOP_MIN_POINTS:
-                    earlier = np.array(path[:-LOOP_SKIP_RECENT_POINTS])
+                if len(path) > loop_min_points:
+                    # list of (2,) -> earlier (n_earlier, 2)
+                    earlier = np.array(path[:-loop_skip_recent_points])
                     if (
                         np.hypot(earlier[:, 0] - point[0], earlier[:, 1] - point[1]).min()
-                        < STREAMLINE_STEP_KM / KM_PER_DEG_LAT
+                        < streamline_step_km / KM_PER_DEG_LAT
                     ):
                         break
 
@@ -140,9 +131,11 @@ class GulfStreamCenterline:
 
         upstream = trace(-1)
         downstream = trace(+1)
+        # two lists of (2,) -> path (n_points, 2)
         path = np.array(upstream[::-1] + downstream[1:])
         if path.size == 0:
             return cls(np.array([]), np.array([]))
+        # path (n_points, 2) -> lon (n_points,), lat (n_points,)
         return cls(path[:, 1], path[:, 0])
 
 
@@ -150,26 +143,20 @@ def trace_streamline_for_file(fp: Path) -> GulfStreamCenterline:
     """Ordered Gulf Stream streamline for one SWOT day."""
     with xr.open_dataset(fp) as ds:
         if "time" in ds.ugos.dims:
+            # ugos and vgos (1, n_lat, n_lon) -> (n_lat, n_lon)
             ds = ds.isel(time=0)
         lon = ds.longitude.to_numpy()
         lat = ds.latitude.to_numpy()
         ugos = ds.ugos.to_numpy()
         vgos = ds.vgos.to_numpy()
 
-    in_band = (lat >= GS_LAT_BAND[0]) & (lat <= GS_LAT_BAND[1])
+    # The Gulf Stream core stays well inside this latitude band within the ROI; restricting the search keeps the line off coastal/subpolar currents.
+    gs_lat_band = (32.0, 43.0)
+    in_band = (lat >= gs_lat_band[0]) & (lat <= gs_lat_band[1])
+    # in_band (n_lat,) -> (n_lat, 1) to broadcast down each column of ugos and vgos (n_lat, n_lon)
     ugos = np.where(in_band[:, np.newaxis], ugos, np.nan)
     vgos = np.where(in_band[:, np.newaxis], vgos, np.nan)
     return GulfStreamCenterline.from_streamline_field(ugos, vgos, lon, lat)
-
-
-def centerline_to_frame(date: dt.date, centerline: GulfStreamCenterline) -> pd.DataFrame:
-    """Silver streamline rows for one date: an ordered polyline, not lat=f(lon)."""
-    return pd.DataFrame({
-        "date": pd.Timestamp(date),
-        "point_idx": np.arange(centerline.lon.size, dtype=int),
-        "lon": centerline.lon,
-        "lat": centerline.lat,
-    })
 
 
 def index_centerlines_by_date(streamline_df: pd.DataFrame) -> dict[dt.date, GulfStreamCenterline]:
@@ -190,9 +177,8 @@ def compute_signed_distance_km(
     """
     Signed shortest distance from an eddy center to an ordered streamline.
 
-    Positive (side 'N') means the eddy is geographically north of the nearest
-    point on the jet, negative ('S') south. Returns (nan, '') if the streamline
-    has too few finite points.
+    Positive (side 'N') means the eddy is geographically north of the nearest point on the jet, negative ('S') south.
+    Returns (nan, '') if the streamline has too few finite points.
     """
     streamline_lon = np.asarray(streamline_lon, dtype=float)
     streamline_lat = np.asarray(streamline_lat, dtype=float)
@@ -206,6 +192,7 @@ def compute_signed_distance_km(
     x = (lon - center_lon) * scale_x
     y = (lat - center_lat) * KM_PER_DEG_LAT
 
+    # x and y (n_finite,) -> start and end (n_finite - 1, 2) holding (x_km, y_km) per segment
     start = np.column_stack([x[:-1], y[:-1]])
     end = np.column_stack([x[1:], y[1:]])
     seg = end - start
@@ -222,6 +209,7 @@ def compute_signed_distance_km(
 
     # The eddy center is the origin in this local km coordinate frame.
     t = np.clip(-np.einsum("ij,ij->i", start, seg) / seg_len2, 0.0, 1.0)
+    # t (n_segments,) -> (n_segments, 1) to scale seg (n_segments, 2), then closest (n_segments, 2) -> dist (n_segments,)
     closest = start + t[:, np.newaxis] * seg
     dist = np.hypot(closest[:, 0], closest[:, 1])
     nearest_idx = int(np.argmin(dist))
@@ -245,6 +233,7 @@ def load_track_observations(
         TrackEddiesObservations,
     )
 
+    pet_epoch = dt.date(1950, 1, 1)  # PET writes observation time as whole days since this date.
     frames = []
     for polarity, track_dir in [
         ("cyclone", cyclone_track_dir),
@@ -253,7 +242,7 @@ def load_track_observations(
         zarr_path = track_dir / f"{track_dir.name}_tracks.zarr"
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
         keep = ~tracked.virtual.astype(bool)
-        days = [PET_EPOCH + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
+        days = [pet_epoch + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
         frames.append(pd.DataFrame({
             "polarity": polarity,
             "track_id": tracked.track[keep].astype(int),
@@ -279,7 +268,6 @@ def main(experiment: str | None = None) -> None:
     anticyclone_track_dir = resolve_output_dir(experiment, "eddy_track", "anticyclone")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Per-date streamline from every SWOT day
     swot_files = sorted(swot_dir.glob("*.nc"))
     print(
         "status: computing_gulf_stream_streamline\n"
@@ -288,10 +276,15 @@ def main(experiment: str | None = None) -> None:
     streamline_rows = []
     centerline_by_date: dict[dt.date, GulfStreamCenterline] = {}
     for fp in swot_files:
-        date = parse_file_date(fp)
+        date = dt.datetime.strptime(re.search(r"\d{8}", fp.name).group(), "%Y%m%d").date()
         centerline = trace_streamline_for_file(fp)
         centerline_by_date[date] = centerline
-        streamline_rows.append(centerline_to_frame(date, centerline))
+        streamline_rows.append(pd.DataFrame({
+            "date": pd.Timestamp(date),
+            "point_idx": np.arange(centerline.lon.size, dtype=int),
+            "lon": centerline.lon,
+            "lat": centerline.lat,
+        }))
     streamline_df = pd.concat(streamline_rows, ignore_index=True)
     streamline_df["date"] = pd.to_datetime(streamline_df["date"])
     streamline_df.to_parquet(out_dir / "streamline.parquet", index=False)
@@ -301,7 +294,6 @@ def main(experiment: str | None = None) -> None:
         f"{streamline_df['lat'].median():.2f}"
     )
 
-    # Movement per track: side of the streamline at birth vs death
     obs = load_track_observations(cyclone_track_dir, anticyclone_track_dir)
     movement_rows = []
     for (polarity, track_id), grp in obs.groupby(["polarity", "track_id"]):

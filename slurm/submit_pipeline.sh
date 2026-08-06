@@ -3,8 +3,8 @@
 # Submit the eddy-tracking pipeline as chained Slurm jobs.
 #
 # Usage:
-#   ./slurm/submit_pipeline.sh <experiment>                    # all stages
-#   ./slurm/submit_pipeline.sh <experiment> --from <stage>     # from stage onward
+#   ./slurm/submit_pipeline.sh <experiment> # all stages
+#   ./slurm/submit_pipeline.sh <experiment> --from <stage> # from stage onward
 #
 # Each stage submits with --dependency=afterok:<prev_job_id> so it only
 # starts after the previous stage succeeds. If any stage fails, all
@@ -47,7 +47,7 @@ fi
 # Create logs directory on the cluster
 mkdir -p "$PROJECT_DIR/logs"
 
-# Ordered stages — downloads run sequentially first, then compute
+# Ordered stages - downloads run sequentially first, then compute
 ALL_STAGES=(download_swot download_pace download_sst_sss eddy_id eddy_track collocate_pace run_sdp run_phytoclass)
 
 # Determine which stages to run
@@ -99,7 +99,7 @@ for stage in "${STAGES[@]}"; do
     done
 
     if $is_download; then
-        : # no dependency — submit immediately
+        : # no dependency - submit immediately
     elif [[ ${#DOWNLOAD_JIDS[@]} -gt 0 && -z "$PREV_JID" ]]; then
         # First sequential stage: depend on all completed downloads
         DEP=$(IFS=:; echo "${DOWNLOAD_JIDS[*]}")

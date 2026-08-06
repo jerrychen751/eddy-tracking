@@ -29,8 +29,8 @@ def read_pace_l2(
         longitude (float32): Pixel longitude in degrees east.
         aot_865 (float32): Dimensionless aerosol optical thickness at 865 nm.
         l2_flags (uint32): Level-2 quality bit field.
-        Rrs_<wavelength_nm> (float32): Remote sensing reflectance in sr^-1.
-        Rrs_unc_<wavelength_nm> (float32): Rrs uncertainty in sr^-1.
+        Rrs_<wavelength_nm> (float32): Remote sensing reflectance in sr^-1, one column per wavelength, such as Rrs_346.017.
+        Rrs_unc_<wavelength_nm> (float32): Rrs uncertainty in sr^-1, such as Rrs_unc_346.017.
     """
     path = Path(path)
     if not path.is_file():
@@ -98,32 +98,35 @@ def read_pace_l2(
     rrs_columns = _spectral_column_names("Rrs", wavelengths_nm)
     rrs_unc_columns = _spectral_column_names("Rrs_unc", wavelengths_nm)
 
-    # Keep one pixel per row. Spectral values stay wide for SDP.
+    # Spectral values stay wide because SDP reads one row per pixel.
     df = pd.DataFrame(
         {
-            "scan_line": np.repeat(line_positions, pixel_count),
-            "pixel": np.tile(pixel_positions, line_count),
+            "scan_line": np.repeat(line_positions, pixel_count),  # (line_count,) -> (row_count,)
+            "pixel": np.tile(pixel_positions, line_count),  # (pixel_count,) -> (row_count,)
             "datetime": pd.to_datetime(
-                np.repeat(scan_times.to_numpy(), pixel_count),
+                np.repeat(scan_times.to_numpy(), pixel_count),  # (line_count,) -> (row_count,)
                 utc=True,
             ),
-            "latitude": selected_navigation["latitude"].to_numpy().reshape(-1),
-            "longitude": selected_navigation["longitude"].to_numpy().reshape(-1),
-            "aot_865": selected_geophysical["aot_865"].to_numpy().reshape(-1),
+            "latitude": selected_navigation["latitude"].to_numpy().reshape(-1),  # (line_count, pixel_count) -> (row_count,)
+            "longitude": selected_navigation["longitude"].to_numpy().reshape(-1),  # (line_count, pixel_count) -> (row_count,)
+            "aot_865": selected_geophysical["aot_865"].to_numpy().reshape(-1),  # (line_count, pixel_count) -> (row_count,)
             "l2_flags": selected_geophysical["l2_flags"]
             .to_numpy()
             .astype(np.uint32, copy=False)
-            .reshape(-1),
+            .reshape(-1),  # (line_count, pixel_count) -> (row_count,)
         }
     )
+    # (line_count, pixel_count, n_wavelengths) -> (row_count, n_wavelengths)
     rrs = selected_geophysical["Rrs"].to_numpy().reshape(
         row_count,
         len(wavelengths_nm),
     )
+    # (line_count, pixel_count, n_wavelengths) -> (row_count, n_wavelengths)
     rrs_unc = selected_geophysical["Rrs_unc"].to_numpy().reshape(
         row_count,
         len(wavelengths_nm),
     )
+    # (row_count, 7) plus two of (row_count, n_wavelengths) -> (row_count, 7 + 2 * n_wavelengths)
     df = pd.concat(
         [
             df,
@@ -253,6 +256,7 @@ def read_multiple_pace_l2(
     if not frames:
         raise ValueError("fps must contain at least one PACE Level-2 file")
 
+    # len(fps) frames of (row_count_i, n_columns) -> (sum of row_count_i, n_columns)
     combined = pd.concat(frames, ignore_index=True)
     combined.attrs = shared_attrs
     combined.attrs["source_files"] = tuple(source_files)

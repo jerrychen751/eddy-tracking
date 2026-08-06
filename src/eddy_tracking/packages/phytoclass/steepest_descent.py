@@ -1,23 +1,10 @@
 """
-Steepest descent refinement for F. Ports phytoclass::Steepest_Descent and its
-helpers (Replace_Rand / Randomise_elements / Fac_F_RR / Conduit /
-Minimise_elements_comb).
-
-Port strategy: R's split across five tiny files was mostly bookkeeping. Here
-we keep the three meaningful layers as private helpers inside one module,
-with public steepest_descent().
+Steepest descent refinement for F. Ports phytoclass::Steepest_Descent and its helpers (Replace_Rand / Randomise_elements / Fac_F_RR / Conduit / Minimise_elements_comb).
 """
 
 import numpy as np
 
 from eddy_tracking.packages.phytoclass.nnls_mf import nnls_mf
-
-
-SCALERS = {
-    1: (0.99, 1.01),
-    2: (0.98, 1.02),
-    3: (0.97, 1.03),
-}
 
 
 def _randomise_element(
@@ -26,7 +13,7 @@ def _randomise_element(
     max_scaler: float,
     rng: np.random.Generator,
 ) -> float:
-    """Mirrors R's Randomise_elements: tiny values bumped to 0.001 first."""
+    """Mirrors R's Randomise_elements: a value below 0.001 is treated as 0.001 before scaling."""
     x_safe = max(x, 0.001)
     return float(np.round(rng.uniform(x_safe * min_scaler, x_safe * max_scaler), 4))
 
@@ -42,16 +29,13 @@ def _fac_f_rr(
     rng: np.random.Generator,
 ) -> dict:
     """
-    Try each (row, col) perturbation independently, apply all improvements, re-NNLS.
+    Try each (row, col) perturbation on its own, then apply every one that beat rmse_baseline and re-run NNLS. Mirrors R's Fac_F_RR.
 
-    Mirrors R's Fac_F_RR. For every position in `vary`, generate one perturbation
-    using SCALERS[scaler_idx], run NNLS_MF with only that one change, flag as
-    "improved" if its RMSE beats the baseline. If any positions improved,
-    apply all of them at once and re-run NNLS (combined improvements may not
-    compose additively but R accepts this). If no improvements, cascade to
-    scaler_idx - 1 until reaching 1, then return the baseline state.
+    Improvements found one at a time need not compose, and R accepts the combined F regardless. When nothing improves, the search cascades to scaler_idx - 1 and stops at 1, which returns the baseline state.
     """
-    min_s, max_s = SCALERS[scaler_idx]
+    # scaler_idx -> (low, high) multipliers on the current value, for example 2 -> (0.98, 1.02).
+    scalers = {1: (0.99, 1.01), 2: (0.98, 1.02), 3: (0.97, 1.03)}
+    min_s, max_s = scalers[scaler_idx]
     n_vary = len(vary_rows)
     new_values = np.empty(n_vary)
     improved = np.zeros(n_vary, dtype=bool)
@@ -89,12 +73,7 @@ def _minimise_elements_comb(
     scaler_idx: int,
     rng: np.random.Generator,
 ) -> dict:
-    """
-    Two passes of _fac_f_rr, keeping whichever has lower RMSE.
-
-    Mirrors R's Minimise_elements_comb (which goes through Conduit but Conduit
-    is just a thin wrapper and we collapse it).
-    """
+    """Two passes of _fac_f_rr, keeping whichever has the lower RMSE. Mirrors R's Minimise_elements_comb and Conduit."""
     baseline = nnls_mf(F_current, S, weights)
 
     pass1 = _fac_f_rr(
@@ -123,18 +102,14 @@ def steepest_descent(
     """
     R's Steepest_Descent outer loop.
 
-    Repeats Minimise_elements_comb up to num_loops times. Within each iteration,
-    if the result worsens, retries Minimise_elements_comb with the R scaler
-    schedule: 3→3×5 → 1×4 → 2×90 → break.
+    Runs _minimise_elements_comb at scaler 3 up to num_loops times. While an iteration leaves the RMSE worse than the current one, it retries on R's scaler schedule: 5 calls at scaler 3, then 4 calls at scaler 1, then 91 calls at scaler 2, then break.
 
     Args:
-        F_initial: full F matrix (n_classes, n_pigments) including Tchla column.
-        S: row-normalized sample matrix.
-        weights: per-pigment NNLS weights (Tchla weight forced to 1).
-        vary_rows, vary_cols: coordinate arrays for non-zero entries in F's
-            non-Tchla submatrix (position (row, col) with col < n_pigments-1).
-        num_loops: outer iteration count - R uses 10 if SA temperature > 0.3
-            else 2.
+        F_initial: full F matrix (n_classes, n_pigments) including the Tchla column.
+        S: row-normalized sample matrix (n_samples, n_pigments).
+        weights: (n_pigments,) NNLS weights, with the Tchla weight forced to 1.
+        vary_rows, vary_cols: (n_vary,) coordinates of the non-zero entries in F's non-Tchla submatrix, so every vary_cols entry is below n_pigments - 1.
+        num_loops: outer iteration count. R uses 10 when the SA temperature is above 0.3, else 2.
         rng: numpy RNG.
 
     Returns the dict from nnls_mf on the final F.

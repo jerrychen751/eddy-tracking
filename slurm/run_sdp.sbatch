@@ -10,7 +10,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/run_sdp_%j.log
 
-# SDP pigment inversion — slowest stage. Per-eddy iteration with
+# SDP pigment inversion - slowest stage. Per-eddy iteration with
 # 100-ensemble GSM inversion per pixel. Currently sequential across
 # eddies; each eddy takes ~30s-1min depending on pixel count.
 #

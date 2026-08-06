@@ -35,7 +35,7 @@ def calculate_dist_to_point(
         * np.sin(delta_lon / 2) ** 2
     )
 
-    # Clipping prevents small floating-point errors outside the valid range.
+    # Rounding can push a just above 1 for an antipodal pair, and arcsin returns NaN there.
     central_angle = 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
     distance_km = 6371.0088 * central_angle
 
@@ -49,7 +49,11 @@ def get_5x5_pace_l2_matchups(
     target_lon: float,
     target_lat: float,
 ) -> pd.DataFrame:
-    """Return the native 5 by 5 box centered on the closest valid PACE pixel."""
+    """
+    Return the native 5 by 5 pixel box centered on the closest valid PACE pixel, restricted to that pixel's source_file when df carries one.
+
+    Returns an empty frame carrying df.attrs when no row has a distance, a scan_line, and a pixel.
+    """
     distances = calculate_dist_to_point(
         df["longitude"],
         df["latitude"],

@@ -1,9 +1,8 @@
 """
 Compute per-eddy dynamical diagnostics from SWOT.
 
-The DUACS/MIOST source variable is named relative_vorticity, but in the files
-used here it is not raw relative vorticity in s^-1. It is already normalized by
-the Coriolis parameter, so the stored quantity is Rossby number (Ro = zeta/f).
+The DUACS/MIOST source variable is named relative_vorticity, but in the files used here it is not raw relative vorticity in s^-1.
+It is already normalized by the Coriolis parameter, so the stored quantity is Rossby number (Ro = zeta/f).
 Outputs one dynamics.parquet per polarity under silver/eddy_dynamics/.
 """
 
@@ -20,37 +19,11 @@ from scipy.interpolate import RegularGridInterpolator
 from utils.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.utils.subset import load_rossby_field
 
-PET_EPOCH = dt.date(1950, 1, 1)
-SWOT_DATE_RE = re.compile(r"\d{8}")
-SWOT_SEARCH_DAYS = 4
-DYNAMICS_COLUMNS = [
-    "polarity",
-    "track_id",
-    "date",
-    "center_lon",
-    "center_lat",
-    "rossby_center",
-    "rossby_mean",
-    "rossby_abs_mean",
-    "rossby_min",
-    "rossby_max",
-    "n_rossby_pixels",
-]
-
-
-def parse_file_date(fp: Path) -> dt.date:
-    """Parse the first YYYYMMDD token in a SWOT filename."""
-    return dt.datetime.strptime(SWOT_DATE_RE.search(fp.name).group(), "%Y%m%d").date()
-
-
-def index_swot_files_by_date(swot_dir: Path) -> dict[dt.date, Path]:
-    """Index local SWOT NetCDF files by observation date."""
-    return {parse_file_date(fp): fp for fp in sorted(swot_dir.glob("*.nc"))}
-
 
 def find_nearest_swot_file(files: dict[dt.date, Path], target: dt.date) -> Path | None:
-    """SWOT file on target, else the closest within SWOT_SEARCH_DAYS."""
-    for delta in range(SWOT_SEARCH_DAYS + 1):
+    """SWOT file on target, else the closest within 4 days, else None."""
+    swot_search_days = 4
+    for delta in range(swot_search_days + 1):
         for day in (target - dt.timedelta(delta), target + dt.timedelta(delta)):
             if day in files:
                 return files[day]
@@ -59,8 +32,9 @@ def find_nearest_swot_file(files: dict[dt.date, Path], target: dt.date) -> Path 
 
 def track_observations_to_frame(tracked, polarity: str) -> pd.DataFrame:
     """Non-virtual observations from one py-eddy-tracker object."""
+    pet_epoch = dt.date(1950, 1, 1)
     keep = ~tracked.virtual.astype(bool)
-    days = [PET_EPOCH + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
+    days = [pet_epoch + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
     contour_lon = (tracked.contour_lon_s[keep] + 180) % 360 - 180
     contour_lat = tracked.contour_lat_s[keep]
     return pd.DataFrame({
@@ -101,10 +75,10 @@ def compute_rossby_stats(
     interp = RegularGridInterpolator((lat, lon), rossby_number, bounds_error=False, fill_value=np.nan)
     center = float(interp([[center_lat, center_lon]])[0])
 
-    lon2d, lat2d = np.meshgrid(lon, lat)
-    points = np.column_stack([lon2d.ravel(), lat2d.ravel()])
-    inside = MplPath(np.column_stack([contour_lon, contour_lat])).contains_points(points)
-    values = rossby_number.ravel()[inside]
+    lon2d, lat2d = np.meshgrid(lon, lat)  # (n_lon,) + (n_lat,) -> (n_lat, n_lon) each
+    points = np.column_stack([lon2d.ravel(), lat2d.ravel()])  # (n_lat, n_lon) each -> (n_lat*n_lon,) each -> (n_lat*n_lon, 2)
+    inside = MplPath(np.column_stack([contour_lon, contour_lat])).contains_points(points)  # contour (n_vertices,) + (n_vertices,) -> (n_vertices, 2)
+    values = rossby_number.ravel()[inside]  # (n_lat, n_lon) -> (n_lat*n_lon,) -> (n_inside,)
     values = values[np.isfinite(values)]
 
     if values.size == 0:
@@ -129,6 +103,19 @@ def compute_rossby_stats(
 
 def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.DataFrame:
     """Compute Rossby diagnostics for each eddy observation with SWOT coverage."""
+    dynamics_columns = [
+        "polarity",
+        "track_id",
+        "date",
+        "center_lon",
+        "center_lat",
+        "rossby_center",
+        "rossby_mean",
+        "rossby_abs_mean",
+        "rossby_min",
+        "rossby_max",
+        "n_rossby_pixels",
+    ]
     rows = []
     for date, grp in obs.groupby("date"):
         swot_fp = find_nearest_swot_file(swot_files, pd.Timestamp(date).date())
@@ -153,7 +140,7 @@ def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.Dat
                 "center_lat": float(row.center_lat),
                 **stats,
             })
-    return pd.DataFrame(rows, columns=DYNAMICS_COLUMNS)
+    return pd.DataFrame(rows, columns=dynamics_columns)
 
 
 def write_dynamics(experiment: str, dynamics: pd.DataFrame) -> None:
@@ -177,7 +164,11 @@ def main(experiment: str | None = None) -> None:
         experiment = args.experiment
 
     cfg = load_config(experiment)
-    swot_files = index_swot_files_by_date(resolve_data_dir(cfg, "swot_dir"))
+    swot_date_re = re.compile(r"\d{8}")
+    swot_files = {
+        dt.datetime.strptime(swot_date_re.search(fp.name).group(), "%Y%m%d").date(): fp
+        for fp in sorted(resolve_data_dir(cfg, "swot_dir").glob("*.nc"))
+    }
     obs = load_track_observations(experiment)
     print(
         "status: computing_rossby_diagnostics\n"

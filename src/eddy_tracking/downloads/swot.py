@@ -16,10 +16,6 @@ import xarray as xr
 from eddy_tracking.utils.authentication import login_aviso, load_aviso_credentials
 
 
-SWOT_VALIDITY_FIELDS = ("adt", "ugos", "vgos", "relative_vorticity")
-COAST_MIN_DISTANCE_PIXELS = 8
-GREAT_LAKES_LON_RANGE = (-81, -75)
-GREAT_LAKES_LAT_RANGE = (40, 44)
 # netCDF4/HDF5 serialization is not safe across downloader threads.
 _NETCDF_IO_LOCK = Lock()
 
@@ -84,22 +80,30 @@ def filter_by_date_range(
 
 def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
     """Mask invalid cells, their eight-cell coast buffer, and the Great Lakes."""
+    swot_validity_fields = ("adt", "ugos", "vgos", "relative_vorticity")
+    coast_min_distance_pixels = 8
+    great_lakes_lon_range = (-81, -75)
+    great_lakes_lat_range = (40, 44)
+
     surface = dataset
     if "time" in surface["adt"].dims:
+        # (1, n_lat, n_lon) -> (n_lat, n_lon)
         surface = surface.isel(time=0)
 
+    # 4 field masks of (n_lat, n_lon) -> (n_lat, n_lon)
     valid = np.logical_and.reduce(
-        [np.isfinite(surface[field].to_numpy()) for field in SWOT_VALIDITY_FIELDS]
+        [np.isfinite(surface[field].to_numpy()) for field in swot_validity_fields]
     )
-    coast_ok = distance_transform_edt(valid) >= COAST_MIN_DISTANCE_PIXELS
+    coast_ok = distance_transform_edt(valid) >= coast_min_distance_pixels
 
     longitude = surface["longitude"].to_numpy()
     latitude = surface["latitude"].to_numpy()
+    # longitude (n_lon,) -> (1, n_lon) and latitude (n_lat,) -> (n_lat, 1) broadcast to (n_lat, n_lon)
     in_great_lakes = (
-        (longitude[np.newaxis, :] >= GREAT_LAKES_LON_RANGE[0])
-        & (longitude[np.newaxis, :] <= GREAT_LAKES_LON_RANGE[1])
-        & (latitude[:, np.newaxis] >= GREAT_LAKES_LAT_RANGE[0])
-        & (latitude[:, np.newaxis] <= GREAT_LAKES_LAT_RANGE[1])
+        (longitude[np.newaxis, :] >= great_lakes_lon_range[0])
+        & (longitude[np.newaxis, :] <= great_lakes_lon_range[1])
+        & (latitude[:, np.newaxis] >= great_lakes_lat_range[0])
+        & (latitude[:, np.newaxis] <= great_lakes_lat_range[1])
     )
     keep = xr.DataArray(
         coast_ok & ~in_great_lakes,
@@ -108,21 +112,9 @@ def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
     )
 
     filtered = dataset.copy()
-    for field in SWOT_VALIDITY_FIELDS:
+    for field in swot_validity_fields:
         filtered[field] = filtered[field].where(keep)
     return filtered
-
-
-def _list_remote_files_with_sizes(
-    settings: DownloadSettings,
-) -> list[tuple[str, int | None]]:
-    """List remote NetCDF paths with their sizes in bytes."""
-    with login_aviso(settings.host, settings.user, settings.password) as ftp:
-        remote_files = [
-            path for path in ftp.nlst(settings.remote_dir) if path.endswith(".nc")
-        ]
-        ftp.voidcmd("TYPE I")
-        return [(path, ftp.size(path)) for path in remote_files]
 
 
 def _download_one(remote_path: str, settings: DownloadSettings) -> str:
@@ -194,7 +186,14 @@ def _trim_file(
 
 def download_files(settings: DownloadSettings) -> list[str]:
     print("status: listing_remote_files")
-    remote_files = _list_remote_files_with_sizes(settings)
+    with login_aviso(settings.host, settings.user, settings.password) as ftp:
+        remote_paths = [
+            path for path in ftp.nlst(settings.remote_dir) if path.endswith(".nc")
+        ]
+        # ftp.size fails in the default ASCII mode, so switch to binary type first.
+        ftp.voidcmd("TYPE I")
+        # Each entry is (remote path, size in bytes), and ftp.size gives None when the server reports no size.
+        remote_files = [(path, ftp.size(path)) for path in remote_paths]
     remote_files.sort(key=lambda item: Path(item[0]).name)
     print(f"remote_files: {len(remote_files)}")
 
@@ -229,7 +228,9 @@ def download_files(settings: DownloadSettings) -> list[str]:
 def main(experiment: str | None = None) -> None:
     """Download configured SWOT files in parallel and trim them to the region."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     failures = download_files(load_settings(experiment))
     if failures:
@@ -240,12 +241,6 @@ def main(experiment: str | None = None) -> None:
         for message in failures:
             print(message)
         raise SystemExit(1)
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":

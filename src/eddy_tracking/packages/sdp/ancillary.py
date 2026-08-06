@@ -16,12 +16,9 @@ def sample_ancillary(
     """
     Sample SST and SSS at given (lon, lat, time) points via nearest-neighbor.
 
-    Uses nearest-neighbor indexing in all three dimensions. Returns NaN where
-    no data is available, such as land masks or gaps.
+    sst_df needs a ('time', 'lat', 'lon') MultiIndex and an `sst` column in Celsius. sss_df needs a ('time', 'latitude', 'longitude') MultiIndex and a `smap_sss` column in PSU. The index level names differ because the two products name their coordinates differently.
 
-    Note:
-        SST grid uses coord names 'lat'/'lon'.
-        SSS grid uses 'latitude'/'longitude'.
+    Returns (sst_values, sss_values), each one value per input point, and NaN where the grid has no data, such as a land mask or a gap.
     """
     sst_values = _sample_nearest(
         sst_df,

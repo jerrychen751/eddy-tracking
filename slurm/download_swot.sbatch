@@ -10,7 +10,7 @@
 #SBATCH --time=06:00:00
 #SBATCH --output=logs/download_swot_%j.log
 
-# Download SWOT L4 SSH from AVISO FTP — I/O-bound, uses ThreadPoolExecutor.
+# Download SWOT L4 SSH from AVISO FTP - I/O-bound, uses ThreadPoolExecutor.
 # Needs .env with FTP_HOST, FTP_USER, FTP_PASSWORD in the project root.
 
 cd ~/projects/eddy-tracking

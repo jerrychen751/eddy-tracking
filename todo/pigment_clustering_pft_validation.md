@@ -13,7 +13,7 @@ should match data resolution.
 ## Method
 
 1. Compute pigment correlation matrix (Spearman) across all collocated samples
-2. Hierarchical clustering on pigments (columns, not samples) — group pigments
+2. Hierarchical clustering on pigments (columns, not samples) - group pigments
    that co-vary tightly
 3. Cut the dendrogram at varying heights; identify stable, distinct clusters
 4. Map each pigment cluster → PFT using the diagnostic pigment within that cluster

@@ -1,22 +1,7 @@
 """
-Sample pre-clustering for phytoclass. Ports phytoclass::Cluster with one
-documented departure.
+Sample pre-clustering for phytoclass. Ports phytoclass::Cluster.
 
-R's Cluster() does:
-    1. Divide each pigment column by Tchla (per-sample normalization)
-    2. Box-Cox standardize each pigment column via bestNormalize::boxcox()
-    3. stats::dist(euclidean) + stats::hclust(ward.D2) on the standardized rows
-    4. Cut the dendrogram with dynamicTreeCut::cutreeDynamic(cutHeight=70,
-       method="hybrid", minClusterSize=min_samples, deepSplit=4, pamStage=TRUE,
-       respectSmallClusters=TRUE)
-
-The Python port keeps steps 1-3 (Box-Cox via scipy.stats.boxcox, Ward linkage
-via scipy which is mathematically equivalent to R's ward.D2), but cannot
-replicate step 4 exactly - there is no pure-Python port of dynamicTreeCut.
-Instead, we cut with scipy.cluster.hierarchy.fcluster at a user-specified
-cophenetic distance threshold and post-hoc merge small clusters into their
-nearest large-cluster centroid. Clusters produced this way are similar to R's
-for typical datasets but not byte-identical.
+R cuts the dendrogram with dynamicTreeCut::cutreeDynamic, which has no Python port. This module cuts at the caller's cophenetic distance instead, then merges every cluster below min_samples into the nearest large-cluster centroid, so cluster membership differs from R on the same input.
 """
 
 import numpy as np
@@ -27,22 +12,21 @@ from scipy.stats import boxcox
 
 def _standardize_pigment_ratios(S: np.ndarray) -> np.ndarray:
     """
-    Divide every pigment column by the Tchla column, then Box-Cox each column.
+    Divide every pigment column by the Tchla column, then Box-Cox each column. Mirrors R's Cluster standardise() helper.
 
-    Mirrors R's Cluster standardise() helper: it first replaces 0 entries with
-    1e-6 (to avoid divide-by-zero inside Box-Cox), divides by Tchla, then
-    applies Box-Cox column by column with a per-column lambda chosen to
-    maximize log-likelihood.
+    Returns (n_samples, n_pigments - 1). A column Box-Cox rejects keeps its untransformed values, so the output can mix transformed and raw scales.
     """
-    pigments = S[:, :-1].astype(float).copy()
-    tchla = S[:, -1].astype(float)
+    pigments = S[:, :-1].astype(float).copy()  # (n_samples, n_pigments) -> (n_samples, n_pigments - 1)
+    tchla = S[:, -1].astype(float)  # (n_samples, n_pigments) -> (n_samples,)
+    # Mirrors R's standardise(), which substitutes 1e-6 for a 0 pigment before taking the ratio.
     pigments[pigments == 0] = 1e-6
     safe_tchla = np.where(tchla > 0, tchla, 1e-10)
-    ratios = pigments / safe_tchla[:, np.newaxis]
+    ratios = pigments / safe_tchla[:, np.newaxis]  # safe_tchla: (n_samples,) -> (n_samples, 1)
 
     standardized = np.empty_like(ratios)
     for j in range(ratios.shape[1]):
         col = ratios[:, j]
+        # scipy.stats.boxcox needs strictly positive input and raises ValueError on a constant column.
         col_shifted = col if col.min() > 0 else col - col.min() + 1e-10
         try:
             bc, _ = boxcox(col_shifted)
@@ -61,21 +45,20 @@ def cluster_samples(
     Cluster pigment samples by pigment-ratio similarity.
 
     Args:
-        S: sample matrix (n_samples, n_pigments) with Tchla as last column.
-        min_samples: minimum cluster size; smaller clusters get merged into
-            their nearest large-cluster centroid.
+        S: sample matrix (n_samples, n_pigments) with Tchla as the last column.
+        min_samples: minimum cluster size. A smaller cluster is merged into its nearest large-cluster centroid.
         distance_threshold: cophenetic distance cutoff passed to fcluster.
 
     Returns:
-        List of (row_indices, S_subset) tuples, one per final cluster. Every
-        row of S appears in exactly one output cluster.
+        List of (row_indices, S_subset) tuples, one per final cluster. Every row of S appears in exactly one output cluster. When no cluster reaches min_samples, every row comes back as a single cluster.
     """
     standardized = _standardize_pigment_ratios(S)
 
     if len(S) < 2:
         return [(np.arange(len(S)), S)]
 
-    condensed = pdist(standardized, metric="euclidean")
+    condensed = pdist(standardized, metric="euclidean")  # (n_samples, n_pigments - 1) -> (n_samples * (n_samples - 1) / 2,)
+    # scipy's "ward" runs the Lance-Williams update on the distances, which matches R's ward.D2, not ward.D.
     Z = linkage(condensed, method="ward")
     labels = fcluster(Z, t=distance_threshold, criterion="distance")
 

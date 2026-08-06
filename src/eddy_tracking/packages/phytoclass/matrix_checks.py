@@ -1,30 +1,10 @@
 """
 Pre-flight sanity filter for S and F. Ports phytoclass::Matrix_checks.
 
-Drops pigment columns that are sparse or zero in S, phytoplankton groups with
-only one pigment, and phytoplankton groups whose diagnostic pigment has been
-stripped from S. Should be called before simulated_annealing when using
-standard class/pigment names.
+Call this before simulated_annealing when S and Fmat carry the standard phytoclass names, for example class "Syn" and pigment "Zea". The filter is driven by those names.
 """
 
 import pandas as pd
-
-
-DIAGNOSTIC_PIGMENTS: list[tuple[str, str]] = [
-    ("Chlorophytes", "Chl_b"),
-    ("Prasinophytes", "Chl_b"),
-    ("Prasinophytes", "Pra"),
-    ("Dinoflagellates-1", "Per"),
-    ("Diatoms-1", "Chl_c1"),
-    ("Diatoms-2", "Fuco"),
-    ("Syn", "Zea"),
-    ("Cryptophytes", "Allo"),
-    ("Haptophytes-H", "X19hex"),
-    ("Haptophytes-L", "X19hex"),
-    ("Diatoms-1", "Fuco"),
-    ("Pelagophytes", "X19but"),
-    ("Prasinophytes", "Chl_b"),
-]
 
 
 def matrix_checks(
@@ -32,20 +12,22 @@ def matrix_checks(
     Fmat: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Filter (S, Fmat) to drop sparse pigments and unfittable groups.
+    Filter (S, Fmat) to drop sparse pigments and unfittable groups. Mirrors R's Matrix_checks.
 
-    Mirrors R's Matrix_checks:
-        1. Binarize Fmat (set all > 0 to 1) for the pigment-presence check.
-        2. Drop F rows with row sum <= 1 (groups with only Tchla).
-        3. Drop F columns with column sum == 0 (pigments no group uses).
-        4. Intersect S and F column names, keeping only the overlap.
-        5. Drop pigment columns that appear in < 1% of samples (colSum(S > 0) / n_samples).
-        6. Drop F rows whose diagnostic pigment (per DIAGNOSTIC_PIGMENTS) is
-           no longer in S.
-        7. After the group drop, drop any F columns that became all-zero.
+    The steps run in this order, and step 6 depends on what step 5 removed:
+        1. Binarize Fmat (every entry above 0 becomes 1) for the presence checks.
+        2. Drop F rows with row sum <= 1, which are groups holding Tchla alone.
+        3. Drop F columns with column sum 0, which are pigments no group uses.
+        4. Keep only the column names that S and F share.
+        5. Drop pigment columns present in 1% or fewer of the samples.
+        6. Drop each F row whose diagnostic pigment left S, for example row "Syn" once column "Zea" is gone.
+        7. Drop the F columns that step 6 left all-zero, and the same columns of S.
 
     Returns:
-        (S_new, F_new) - new DataFrames with matched columns.
+        (S_new, F_new) with matched column names. F_new carries Fmat's original values, not the binarized ones.
+
+    Raises:
+        TypeError: S or Fmat is not a DataFrame.
     """
     if not isinstance(S, pd.DataFrame):
         raise TypeError("Matrix_checks expects DataFrames so column names drive the filter.")
@@ -71,8 +53,25 @@ def matrix_checks(
         S_new = S_new[keep_cols]
         f_bin = f_bin[keep_cols]
 
+    # (Fmat row label, S column label) pairs, for example ("Syn", "Zea"): the group cannot be fitted once its diagnostic pigment leaves S.
+    diagnostic_pigments = [
+        ("Chlorophytes", "Chl_b"),
+        ("Prasinophytes", "Chl_b"),
+        ("Prasinophytes", "Pra"),
+        ("Dinoflagellates-1", "Per"),
+        ("Diatoms-1", "Chl_c1"),
+        ("Diatoms-2", "Fuco"),
+        ("Syn", "Zea"),
+        ("Cryptophytes", "Allo"),
+        ("Haptophytes-H", "X19hex"),
+        ("Haptophytes-L", "X19hex"),
+        ("Diatoms-1", "Fuco"),
+        ("Pelagophytes", "X19but"),
+        ("Prasinophytes", "Chl_b"),
+    ]
+
     rows_to_drop = []
-    for cls, pig in DIAGNOSTIC_PIGMENTS:
+    for cls, pig in diagnostic_pigments:
         if cls in f_bin.index and pig not in S_new.columns:
             rows_to_drop.append(cls)
     if rows_to_drop:

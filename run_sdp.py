@@ -1,8 +1,7 @@
 """
 Run the SDP pigment model on collocated PACE Rrs observations.
 
-For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS,
-runs the Kramer et al. (2022) model, and writes a pigment Parquet file.
+For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS, runs the Kramer et al. (2022) model, and writes a pigment Parquet file.
 """
 
 import argparse
@@ -50,6 +49,7 @@ def process_eddy(
     )
     raw_rrs = observations[rrs_columns].values
 
+    # raw_rrs (n_pixels, n_native_wavelengths) -> processed_rrs (n_pixels, n_processed_wavelengths)
     processed_wavelengths, processed_rrs = preprocess_rrs_batch(
         wavelengths, raw_rrs
     )
@@ -108,16 +108,12 @@ def process_eddy(
     return True
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
-
-
 def main(experiment: str | None = None) -> None:
     """Process all collocated eddies and write missing pigment Parquet files."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     cfg = load_config(experiment)
     sst_dir = resolve_data_dir(cfg, "sst_dir")

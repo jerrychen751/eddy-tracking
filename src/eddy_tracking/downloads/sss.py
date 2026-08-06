@@ -11,15 +11,6 @@ from pathlib import Path
 from eddy_tracking.utils.authentication import login_harmony
 
 
-def strip_harmony_prefix(filename: str) -> str:
-    """
-    Harmony stages downloaded files as '{item_id}_{original_name}'.
-
-    The item_id changes per job, so strip it for stable filenames.
-    """
-    return re.sub(r"^\d+_", "", filename)
-
-
 def download_smap_sss_8d(
     date_range: tuple[str, str],
     lon_range: tuple[float, float],
@@ -32,14 +23,15 @@ def download_smap_sss_8d(
     download_chunk_size_mb: int = 50,
 ) -> tuple[int, int]:
     """
-    Download SMAP L3 8-day SSS via Harmony, batched into 10-day windows to
-    avoid Harmony request size limits. Returns (files_saved, failed_windows).
+    Download SMAP L3 8-day SSS through Harmony, one request per batch_days window, which keeps each request under the Harmony size limit.
 
-    Note: harmony reads its worker/chunk env vars at import time, so these
-    must be set before importing harmony.
+    Creates out_dir and raw_tmp, writes one NetCDF per granule into out_dir, and deletes raw_tmp on exit.
+    Sets the NUM_REQUESTS_WORKERS and DOWNLOAD_CHUNK_SIZE environment variables.
+    Returns (files_saved, failed_windows).
     """
     import os as _os
 
+    # harmony reads NUM_REQUESTS_WORKERS and DOWNLOAD_CHUNK_SIZE at import time, so set them before the harmony import below.
     _os.environ["NUM_REQUESTS_WORKERS"] = str(num_requests_workers)
     _os.environ["DOWNLOAD_CHUNK_SIZE"] = str(download_chunk_size_mb * 1024 * 1024)
 
@@ -105,7 +97,8 @@ def download_smap_sss_8d(
                 continue
 
             for raw_path in raw_files:
-                stable_name = strip_harmony_prefix(raw_path.name)
+                # Harmony stages each file as "{item_id}_{original_name}", such as "12345_SMAP_L3_SSS_20250114_8DAYS_V5.0.nc", and item_id changes per job.
+                stable_name = re.sub(r"^\d+_", "", raw_path.name)
                 out_path = out_dir / stable_name
                 if out_path.exists():
                     continue
@@ -123,7 +116,9 @@ def download_smap_sss_8d(
 def main(experiment: str | None = None) -> None:
     """Download configured SSS files and exit if a window fails."""
     if experiment is None:
-        experiment = _parse_args().experiment
+        parser = argparse.ArgumentParser()
+        parser.add_argument("experiment")
+        experiment = parser.parse_args().experiment
 
     from utils.config import load_config, resolve_data_dir
 
@@ -151,12 +146,6 @@ def main(experiment: str | None = None) -> None:
     )
     if n_failed:
         raise SystemExit(f"{n_failed} SSS window(s) failed to download")
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("experiment")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":

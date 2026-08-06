@@ -1,14 +1,14 @@
 """
 Phytoclass: pigment-based phytoplankton community composition via SA + NNLS.
 
-This package follows Hayward et al. (2023) and preserves parity with the
-reference R implementation where feasible.
+This package follows Hayward et al. (2023) and preserves parity with the reference R implementation where feasible.
 
 Public API:
     - ``run_phytoclass``: cluster samples and estimate per-sample PFT abundances.
     - ``simulated_annealing``: run the core simulated annealing algorithm.
     - ``matrix_checks``: validate and filter model matrices.
     - ``cluster_samples``: group samples before model execution.
+    - ``SDP_TO_INTERNAL``: SDP pigment name -> internal F-matrix name.
 """
 
 import os
@@ -39,7 +39,7 @@ SDP_TO_INTERNAL: dict[str, str] = {
 }
 
 
-def _sa_on_cluster(
+def _run_sa_on_cluster(
     cluster_df: pd.DataFrame,
     f_matrix: pd.DataFrame,
     min_max: pd.DataFrame,
@@ -74,26 +74,21 @@ def run_phytoclass(
     Estimate phytoplankton class abundances from SDP pigment concentrations.
 
     Args:
-        pigments_df: Per-sample SDP pigments. ``T chla`` is required; columns
-            outside ``SDP_TO_INTERNAL`` are ignored.
-        f_matrix: Class-by-pigment contribution matrix using internal pigment
-            names from ``SDP_TO_INTERNAL``.
-        min_max: DataFrame with columns Class, Pig_Abbrev, min, max. One row
-            per non-zero class-pigment pair in ``f_matrix``.
+        pigments_df: Per-sample SDP pigments. ``T chla`` is required, and a column outside ``SDP_TO_INTERNAL`` is ignored. A NaN in any F-matrix pigment column raises ValueError, so drop or impute first.
+        f_matrix: Class-by-pigment contribution matrix using internal pigment names from ``SDP_TO_INTERNAL``. A pigment column that pigments_df lacks is filled with 0.
+        min_max: DataFrame with columns Class, Pig_Abbrev, min, max. One row per non-zero class-pigment pair in ``f_matrix``.
         as_fraction: Return row-normalized fractions instead of Chla units.
         cluster_threshold: Cophenetic distance cutoff for sample clustering.
-        min_cluster_size: Minimum samples per cluster; small clusters are
-            merged into their nearest large-cluster centroid.
+        min_cluster_size: Minimum samples per cluster. A smaller cluster is merged into its nearest large-cluster centroid.
         n_iter: Simulated annealing iterations per cluster.
         seed: Base seed. Each cluster uses ``seed + cluster_idx``.
-        n_jobs: Worker count. Defaults to the smaller of cluster count and CPU
-            count. Use 1 when this function already runs inside a worker.
+        n_jobs: Worker count. Defaults to the smaller of cluster count and CPU count. Use 1 when this function already runs inside a worker.
 
     Returns:
-        DataFrame with one column per class, same row order as pigments_df.
+        DataFrame with one column per ``f_matrix`` class, same row order as pigments_df. A class that matrix_checks dropped stays 0.
 
     Side effects:
-        Prints cluster progress and starts worker processes when ``n_jobs > 1``.
+        Prints cluster progress, and starts worker processes when ``n_jobs`` and the cluster count are both above 1.
     """
     column_map = {
         sdp: internal
@@ -157,7 +152,7 @@ def run_phytoclass(
                 f"samples: {len(cluster_df)}\n"
                 "status: processing"
             )
-            cluster_result = _sa_on_cluster(
+            cluster_result = _run_sa_on_cluster(
                 cluster_df,
                 checked_f_matrix,
                 min_max,
@@ -169,7 +164,7 @@ def run_phytoclass(
         with ProcessPoolExecutor(max_workers=n_jobs) as executor:
             futures = {
                 executor.submit(
-                    _sa_on_cluster,
+                    _run_sa_on_cluster,
                     cluster_df,
                     checked_f_matrix,
                     min_max,

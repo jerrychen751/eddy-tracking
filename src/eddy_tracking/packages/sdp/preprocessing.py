@@ -4,7 +4,7 @@ Rrs spectral preprocessing for the SDP model.
 Implements the Kramer et al. (2022) preprocessing chain:
   1. Interpolate to 1 nm grid (on padded range 396-704 nm)
   2. 5 nm centered moving mean smoothing
-  3. Trim 4 nm from each edge → final 400-700 nm at 1 nm (301 values)
+  3. Trim 4 nm from each edge -> final 400-700 nm at 1 nm (301 values)
 """
 
 from __future__ import annotations
@@ -13,13 +13,6 @@ from typing import Sequence
 
 import numpy as np
 from scipy.interpolate import CubicSpline
-
-
-# Default parameters matching the Kramer et al. workflow
-DEFAULT_INTERP_NM = 1
-DEFAULT_SMOOTH_NM = 5
-DEFAULT_EDGE_TRIM_NM = 4
-DEFAULT_FINAL_RANGE_NM = (400, 700)
 
 
 def moving_mean(values: np.ndarray, window: int) -> np.ndarray:
@@ -55,23 +48,23 @@ def preprocess_rrs_spectrum(
     wavelengths_nm: np.ndarray,
     rrs: np.ndarray,
     *,
-    interp_nm: int = DEFAULT_INTERP_NM,
-    smooth_nm: int = DEFAULT_SMOOTH_NM,
-    edge_trim_nm: int = DEFAULT_EDGE_TRIM_NM,
-    final_range_nm: Sequence[int] = DEFAULT_FINAL_RANGE_NM,
+    interp_nm: int = 1,
+    smooth_nm: int = 5,
+    edge_trim_nm: int = 4,
+    final_range_nm: Sequence[int] = (400, 700),
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Interpolate, smooth, and trim a single Rrs spectrum to a fixed 1 nm grid.
 
-    To make the final [400, 700] values valid after smoothing, interpolation is performed on an extended grid (final_range +/- edge_trim) which is then trimmed back to final_range.
+    To make the final [400, 700] values valid after smoothing, interpolation is performed on an extended grid (final_range +/- edge_trim) which is then trimmed back to final_range. The four defaults match the Kramer et al. workflow.
 
     Args:
-        wavelengths_nm: Native wavelength centers (1D).
-        rrs: Rrs values at those wavelengths (1D, same shape).
+        wavelengths_nm: Native wavelength centers in nm (1D).
+        rrs: Rrs values in sr^-1 at those wavelengths (1D, same shape).
         interp_nm: Interpolation step size in nm.
         smooth_nm: Moving-mean window width in nm.
         edge_trim_nm: Number of nm to trim from each edge after smoothing.
-        final_range_nm: (min, max) wavelength range for the output.
+        final_range_nm: (min, max) wavelength range in nm for the output.
 
     Returns:
         (out_wavelengths, out_rrs) - both 1D arrays of length (final_max - final_min) / interp_nm + 1 (default: 301).
@@ -135,8 +128,8 @@ def preprocess_rrs_batch(
     Apply preprocess_rrs_spectrum to each row of a 2D Rrs array.
 
     Args:
-        wavelengths_nm: 1D array of native wavelength centers (shared by all rows).
-        rrs_2d: 2D array of shape (n_obs, n_wavelengths), where each row is one observation (pixel).
+        wavelengths_nm: 1D array of native wavelength centers in nm (shared by all rows).
+        rrs_2d: 2D array of Rrs in sr^-1 with shape (n_obs, n_wavelengths), where each row is one observation (pixel).
         **kwargs: Forwarded to preprocess_rrs_spectrum (interp_nm, smooth_nm, etc.).
 
     Returns:
@@ -154,4 +147,4 @@ def preprocess_rrs_batch(
         wl_out, rrs_out = preprocess_rrs_spectrum(wavelengths_nm, rrs_2d[i], **kwargs)
         rows.append(rrs_out)
 
-    return wl_out, np.stack(rows)
+    return wl_out, np.stack(rows)  # n_obs arrays of (n_out_wavelengths,) -> (n_obs, n_out_wavelengths)

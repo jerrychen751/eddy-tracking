@@ -10,7 +10,7 @@
 #SBATCH --time=06:00:00
 #SBATCH --output=logs/eddy_id_%j.log
 
-# Eddy identification — CPU-bound, uses ProcessPoolExecutor internally.
+# Eddy identification - CPU-bound, uses ProcessPoolExecutor internally.
 # 270 daily SSH files processed in parallel across cpus-per-task cores.
 # ~10 minutes with 6 workers on the login node; should be faster here.
 

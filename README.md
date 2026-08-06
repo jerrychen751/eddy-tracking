@@ -18,8 +18,8 @@ This project uses [uv](https://docs.astral.sh/uv/) to manage its Python environm
 Install uv once with `curl -LsSf https://astral.sh/uv/install.sh | sh`, then from the repo root run:
 
 ```bash
-uv sync                # build .venv from the locked dependencies (Python 3.10)
-cp .env.example .env   # then fill in your AVISO FTP credentials
+uv sync # build .venv from the locked dependencies (Python 3.10)
+cp .env.example .env # then fill in your AVISO FTP credentials
 ```
 
 `uv sync` reads `pyproject.toml` and `uv.lock` and builds an exact, reproducible environment.
@@ -50,11 +50,9 @@ Each experiment has a config directory under `configs/<experiment>/`:
 ```
 configs/
   gulf_stream_20241001_20250701/
-    config.yaml     # all stage settings in one file, keyed by section:
-                    #   base (region, dates, data paths), eddy_id, eddy_track,
-                    #   collocate_pace, phytoclass
-    f_matrix.csv    # phytoclass pigment-to-PFT matrix
-    min_max.csv     # phytoclass parameter bounds
+    config.yaml # all stage settings in one file, keyed by section: base (region, dates, data paths), eddy_id, eddy_track, collocate_pace, phytoclass
+    f_matrix.csv # phytoclass pigment-to-PFT matrix
+    min_max.csv # phytoclass parameter bounds
 ```
 
 Data is organized in a bronze/silver/gold (medallion) layout: `bronze/` is raw

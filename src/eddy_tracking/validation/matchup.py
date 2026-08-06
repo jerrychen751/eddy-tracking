@@ -5,12 +5,6 @@ from datetime import datetime, timedelta, timezone
 import earthaccess
 from earthaccess import DataGranule
 
-PACE_L2_COLLECTION_SHORT_NAME = "PACE_OCI_L2_AOP"
-PACE_L2_VERSION = "3.2"
-SSS_COLLECTION_CONCEPT_ID = "C2208422957-POCLOUD"
-SSS_GRANULE_NAME = "SMAP_L3_SSS_*_8DAYS_V5.0"
-SST_COLLECTION_CONCEPT_ID = "C1615905770-OB_DAAC"
-SST_GRANULE_NAME = "AQUA_MODIS.*.L3m.8D.SST.sst.4km.nc"
 MATCHUP_TIME_WINDOW = timedelta(hours=3)
 
 
@@ -32,8 +26,8 @@ def list_pace_l2_matchups(
         measurement_dttm,
         matchup_window,
         count,
-        short_name=PACE_L2_COLLECTION_SHORT_NAME,
-        version=PACE_L2_VERSION,
+        short_name="PACE_OCI_L2_AOP",
+        version="3.2",
     )
 
 
@@ -50,8 +44,8 @@ def list_sss_matchups(
         measurement_dttm,
         matchup_window,
         count,
-        concept_id=SSS_COLLECTION_CONCEPT_ID,
-        granule_name=SSS_GRANULE_NAME,
+        concept_id="C2208422957-POCLOUD",
+        granule_name="SMAP_L3_SSS_*_8DAYS_V5.0",
     )
 
 
@@ -68,8 +62,8 @@ def list_sst_matchups(
         measurement_dttm,
         matchup_window,
         count,
-        concept_id=SST_COLLECTION_CONCEPT_ID,
-        granule_name=SST_GRANULE_NAME,
+        concept_id="C1615905770-OB_DAAC",
+        granule_name="AQUA_MODIS.*.L3m.8D.SST.sst.4km.nc",
     )
 
 

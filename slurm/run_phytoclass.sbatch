@@ -10,7 +10,7 @@
 #SBATCH --time=18:00:00
 #SBATCH --output=logs/run_phytoclass_%j.log
 
-# Phytoclass PFT decomposition — processes eddies in parallel via
+# Phytoclass PFT decomposition - processes eddies in parallel via
 # ProcessPoolExecutor (12 workers). Each eddy runs SA + NNLS
 # independently. Largest eddies (~35k pixels) take ~4h each;
 # 12-way parallelism brings wall time to ~5h.

@@ -1,6 +1,4 @@
-"""
-Module to read NASA SeaBASS files.
-"""
+"""Read NASA SeaBASS files."""
 
 from pathlib import Path
 
@@ -9,10 +7,13 @@ import pandas as pd
 
 def read_sb(path: Path | str, below_detection: str = "nan") -> tuple[pd.DataFrame, dict[str, str]]:
     """
-    Read one SeaBASS file into a DataFrame and its header dict. below_detection sets how to treat the below-detection-limit sentinel.
+    Read one SeaBASS file into a DataFrame and its header dict.
 
-    Returns (df, header). df holds one row per sample, columns named by /fields.
-    df.attrs["units"] maps each field to its /units value.
+    below_detection sets how to treat the /below_detection_limit sentinel: "nan" reads it as NaN, "zero" reads it as 0.0.
+    Returns (df, header).
+    df holds one row per sample, with one column per name in the /fields header, such as "/fields=date,time,lat,lon,depth,Tot_Chl_a".
+    df.attrs["units"] maps each field to its /units value, such as "Tot_Chl_a" to "mg/m^3".
+    header maps each /key=value header line to its value, without the leading slash.
     """
     if below_detection not in ("nan", "zero"):
         raise ValueError(f"below_detection must be 'nan' or 'zero', got {below_detection!r}")
@@ -31,7 +32,7 @@ def read_sb(path: Path | str, below_detection: str = "nan") -> tuple[pd.DataFram
             if s == "/end_header":
                 break
             if not s or s.startswith("!"):
-                continue  # blank line or comment
+                continue  # "!" marks a SeaBASS comment line.
             if s.startswith("/") and "=" in s:
                 key, value = s[1:].split("=", 1)
                 header[key] = value
@@ -45,7 +46,7 @@ def read_sb(path: Path | str, below_detection: str = "nan") -> tuple[pd.DataFram
     delim = header["delimiter"].strip()
     sep = {"comma": ",", "space": r"\s+", "tab": "\t"}.get(delim, delim)
 
-    # Sentinels that always mean "no usable value".
+    # /missing and /above_detection_limit hold a sentinel such as "-9999" that always means no usable value.
     na_values = [header[k] for k in ("missing", "above_detection_limit") if k in header]
     below = header.get("below_detection_limit")
     if below_detection == "nan" and below is not None:
@@ -74,7 +75,8 @@ def read_hplc_dir(hplc_dir: Path | str, below_detection: str = "nan") -> pd.Data
 
     Adds a 'cruise' and 'source_file' column so each row keeps its origin.
     Adds a 'datetime' column when the files carry 'date' and 'time' fields.
-    combined.attrs["units"] contains compatible units from all files.
+    combined.attrs["units"] maps each field to its unit.
+    Raises ValueError when two files give one field different units.
     """
     hplc_dir = Path(hplc_dir)
     frames: list[pd.DataFrame] = []

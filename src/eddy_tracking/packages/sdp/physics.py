@@ -1,8 +1,7 @@
-"""Seawater optical physics for the Kramer et al. (2022) SDP model.
+"""
+Seawater optical physics for the Kramer et al. (2022) SDP model.
 
-Implements the GSM bio-optical inversion model (Gordon et al. 1988) and
-the Zhang et al. (2009) seawater scattering parameterization used to
-compute Rrs residuals for pigment prediction.
+Implements the GSM bio-optical inversion model (Gordon et al. 1988) and the Zhang et al. (2009) seawater scattering parameterization used to compute Rrs residuals for pigment prediction.
 """
 
 import numpy as np
@@ -20,7 +19,7 @@ def RInw(
     Tc: int | float,
     S: int | float,
 ) -> tuple[float | np.ndarray, float | np.ndarray]:
-    """Refractive index of air (Ciddor 1996) and seawater (Quan & Fry 1994)."""
+    """Return (nsw, dnswds): the absolute seawater refractive index (Quan & Fry 1994 scaled by the Ciddor 1996 air index) and its derivative with respect to salinity, for lambda_ in nm, Tc in Celsius, and S in PSU."""
     n_air = (
         1.0 + (5792105.0 / (238.0185 - 1 / (lambda_ / 1e3) ** 2)
         + 167917.0 / (57.362 - 1 / (lambda_ / 1e3) ** 2)) / 1e8
@@ -36,7 +35,7 @@ def RInw(
     n8 = -4382
     n9 = 1.1455e6
     nsw = (
-        n0 + (n1 + n2 * Tc + n3 * Tc ** 2) * S + n4 * Tc ** 2 
+        n0 + (n1 + n2 * Tc + n3 * Tc ** 2) * S + n4 * Tc ** 2
         + (n5 + n6 * S + n7 * Tc) / lambda_ + n8 / lambda_ ** 2 + n9
         / lambda_ ** 3
     )
@@ -47,9 +46,9 @@ def RInw(
 
 
 def BetaT(Tc: int | float, S: int | float) -> float:
-    """Seawater isothermal compressibility (Millero 1980)."""
+    """Seawater isothermal compressibility in Pa^-1 (Millero 1980), for Tc in Celsius and S in PSU."""
     kw = (
-        19652.21 + 148.4206 * Tc - 2.327105 * Tc ** 2 + 1.360477e-2 
+        19652.21 + 148.4206 * Tc - 2.327105 * Tc ** 2 + 1.360477e-2
         * Tc ** 3 - 5.155288e-5 * Tc ** 4
     )
     Btw_cal = 1 / kw
@@ -63,7 +62,7 @@ def BetaT(Tc: int | float, S: int | float) -> float:
 
 
 def rho_sw(Tc: int | float, S: int | float) -> float:
-    """Seawater density (kg/m³) from UNESCO 1981."""
+    """Seawater density in kg/m^3 (UNESCO 1981), for Tc in Celsius and S in PSU."""
     a0 = 8.24493e-1
     a1 = -4.0899e-3
     a2 = 7.6438e-5
@@ -80,9 +79,7 @@ def rho_sw(Tc: int | float, S: int | float) -> float:
     b4 = -1.120083e-6
     b5 = 6.536332e-9
 
-    # density for pure water
     density_w = b0 + b1 * Tc + b2 * Tc ** 2 + b3 * Tc ** 3 + b4 * Tc ** 4 + b5 * Tc ** 5
-    # density for pure seawater
     density_sw = (
         density_w + ((a0 + a1 * Tc + a2 * Tc ** 2 + a3 * Tc ** 3 + a4 * Tc ** 4) * S
         + (a5 + a6 * Tc + a7 * Tc ** 2) * S ** 1.5 + a8 * S ** 2)
@@ -91,7 +88,7 @@ def rho_sw(Tc: int | float, S: int | float) -> float:
 
 
 def dlnasw_ds(Tc: int | float, S: int | float) -> float:
-    """Partial derivative of ln(water activity) w.r.t. salinity (Millero & Leung 1976)."""
+    """Partial derivative of ln(water activity) with respect to salinity, per PSU, for Tc in Celsius and S in PSU. Millero & Leung (1976) Table 19, reproduced from their Eq. 14, 22, 23, 88, and 107, then fitted to a polynomial."""
 
     dlnawds = (
         (-5.58651e-4 + 2.40452e-7 * Tc - 3.12165e-9 * Tc ** 2 + 2.40808e-11 * Tc ** 3)
@@ -102,7 +99,7 @@ def dlnasw_ds(Tc: int | float, S: int | float) -> float:
 
 
 def PMH(n_wat: float | np.ndarray) -> float | np.ndarray:
-    """Return the PMH refractive-index density derivative."""
+    """Return the dimensionless PMH refractive-index density derivative for the absolute refractive index n_wat."""
     n_wat2 = n_wat ** 2
     n_density_derivative = (
         (n_wat2 - 1) * (1 + 2 / 3 * (n_wat2 + 2)
@@ -117,48 +114,37 @@ def betasw124_ZHH2009(
     delta: float = 0.039
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Seawater scattering at 124° (Zhang et al. 2009).
-    
-    S and Tc must be scalars. delta defaults to 0.039 (Farinato & Roswell 1976).
-    Modified to use 124° instead of 117° (Apr 2013).
-    
-    Returns: (betasw124, bsw_total, beta90sw, theta).
+    Seawater scattering at 124 degrees (Zhang et al. 2009).
+
+    lambda_ is in nm, S in PSU, and Tc in Celsius. S and Tc must be scalars. delta defaults to 0.039 (Farinato & Roswell 1976).
+
+    Returns: (betasw124, bsw, beta90sw, theta). betasw124 and beta90sw are volume scattering in m^-1 sr^-1, bsw is total scattering in m^-1, theta is the scattering angle in degrees from 0 to 180.
     """
 
     for param in [S, Tc]:
         if isinstance(param, np.ndarray):
             raise NotImplementedError("S and Tc must be scalar.")
 
-    # values of the constants
     Na = 6.0221417930e23  # Avogadro's constant
     Kbz = 1.3806503e-23  # Boltzmann constant
-    Tk = Tc + 273.15  # Absolute temperature
+    Tk = Tc + 273.15
     M0 = 18e-3  # Molecular weight of water in kg/mol
 
     theta = np.linspace(0.0, 180.0, 18_001)
 
-    rad = theta * np.pi/180  # angle in radians as a 1-d array
+    rad = theta * np.pi/180
 
-    # nsw: absolute refractive index of seawater
-    # dnds: partial derivative of seawater refractive index w.r.t. salinity
+    # nsw is the absolute refractive index of seawater, dnds its partial derivative with respect to salinity.
     nsw, dnds = RInw(lambda_, Tc, S)
 
-    # isothermal compressibility is from Lepple & Millero (1971,Deep Sea-Research), pages 10-11
-    # The error ~ +/-0.004e-6 bar^-1
+    # The compressibility fit carries an error of about +/-0.004e-6 bar^-1 (Lepple & Millero 1971, pages 10-11).
     IsoComp = BetaT(Tc, S)
 
-    # density of water and seawater,unit is Kg/m^3, from UNESCO,38,1981
     density_sw = rho_sw(Tc, S)
 
-    # water activity data of seawater is from Millero and Leung (1976,American
-    # Journal of Science,276,1035-1077). Table 19 was reproduced using
-    # Eq.(14,22,23,88,107) then were fitted to polynominal equation.
-    # dlnawds is partial derivative of natural logarithm of water activity
-    # w.r.t.salinity
     dlnawds = dlnasw_ds(Tc, S)
 
-    # density derivative of refractive index from PMH model
-    DFRI = PMH(nsw)  # PMH model
+    DFRI = PMH(nsw)
 
     # volume scattering at 90 degree due to the density fluctuation
     beta_df = (
@@ -173,7 +159,6 @@ def betasw124_ZHH2009(
         * (flu_con) * (6 + 6 * delta)/(6 - 7 * delta)
     )
 
-    # total volume scattering at 90 degree
     beta90sw = beta_df + beta_cf
     bsw = 8 * np.pi/3 * beta90sw * (2 + delta) / (1 + delta)
 
@@ -186,38 +171,42 @@ def betasw124_ZHH2009(
     return betasw124, bsw, beta90sw, theta
 
 def gsm_cost(
-    IOPs: np.ndarray, 
-    rrs: np.ndarray, 
-    aw: np.ndarray, 
-    bbw: np.ndarray, 
-    bbpstar: np.ndarray, 
-    A: np.ndarray, 
-    B: np.ndarray, 
+    IOPs: np.ndarray,
+    rrs: np.ndarray,
+    aw: np.ndarray,
+    bbw: np.ndarray,
+    bbpstar: np.ndarray,
+    A: np.ndarray,
+    B: np.ndarray,
     admstar: np.ndarray
 ) -> float:
-    """Return squared residual error for one GSM parameter vector."""
+    """Return the squared residual error for one GSM parameter vector IOPs = (chl, acdm at 443 nm in m^-1, bbp at 443 nm in m^-1) against the below-surface rrs of one spectrum."""
     g = np.array([0.0949, 0.0794])  # Constants from Gordon et al., 1988
 
     aph = A * IOPs[0]**B
     a = aw + aph + (IOPs[1] * admstar)
     bb = bbw + IOPs[2] * bbpstar
     x = bb / (a + bb)
-    
+
     rrspred = (g[0] + g[1] * x) * x
     cost = np.sum((rrs - rrspred)**2)
 
     return cost
 
 def gsm_invert(
-    rrs: np.ndarray, 
-    aw: np.ndarray, 
-    bbw: np.ndarray, 
-    bbpstar: np.ndarray, 
-    A: np.ndarray, 
-    B: np.ndarray, 
+    rrs: np.ndarray,
+    aw: np.ndarray,
+    bbw: np.ndarray,
+    bbpstar: np.ndarray,
+    A: np.ndarray,
+    B: np.ndarray,
     admstar: np.ndarray
 ) -> np.ndarray:
-    """Fit GSM inherent optical properties for one spectrum."""
+    """
+    Fit GSM inherent optical properties for one below-surface rrs spectrum.
+
+    Returns (chl, acdm at 443 nm in m^-1, bbp at 443 nm in m^-1). Raises GSMInversionError when the simplex search hits its iteration or evaluation limit.
+    """
 
     IOPSinit = [0.15, 0.01, 0.0029]
 
@@ -244,83 +233,78 @@ def gsm_invert(
     return iops_opt
 
 def get_rrs_residuals(
-    Rrs: pd.DataFrame, 
-    temp: np.ndarray, 
-    sal: np.ndarray, 
+    Rrs: pd.DataFrame,
+    temp: np.ndarray,
+    sal: np.ndarray,
     wavelengths: np.ndarray
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Compute Rrs residuals (measured - modeled) using Kramer et al. (2022) method.
-    
-    Converts above-surface Rrs to below-surface rrs using Lee et al. (2002) conversion.
-    Uses GSM inversion (Gordon et al. 1988) to model IOPs, then reconstructs Rrs.
-    
-    Returns: (rrsD, RrsD) - below-surface and above-surface residuals.
+    Compute Rrs residuals (measured - modeled) using the Kramer et al. (2022) method.
+
+    Converts the above-surface Rrs to below-surface rrs with the Lee et al. (2002) relation, inverts for IOPs with GSM (Gordon et al. 1988), then rebuilds Rrs from those IOPs.
+
+    Args:
+        Rrs: Above-surface remote-sensing reflectance in sr^-1, one row per spectrum, with integer wavelength columns that include 440, 490, and 555.
+        temp: Sea surface temperature in Celsius, one value per row of Rrs.
+        sal: Sea surface salinity in PSU, one value per row of Rrs.
+        wavelengths: Wavelength centers in nm, matching the columns of Rrs.
+
+    Returns:
+        (rrsD, RrsD) - the below-surface and above-surface residuals, each of shape (n_wavelengths, n_samples).
     """
-    
+
     required_wl = [440, 490, 555]
     missing = [w for w in required_wl if w not in Rrs.columns]
     if missing:
         raise ValueError(f"Rrs DataFrame missing required wavelength columns: {missing}")
 
-    n = len(temp) # number of samples/spectra
+    n = len(temp)
 
-    # The model uses reflectance = f(IOPs) from Gordon et al. (1988) which uses
-    # below the surface reflectance (rrs = Lu(0-)/Ed(0-)). If you are using 
-    # above surface reflectance (Rrs = Lu(0+)/Ed(0+)), you will need to convert
-    # your reflectances before running this model, using the equation below from
-    # Lee et al. (2002):
+    # Gordon et al. (1988) needs below-surface rrs = Lu(0-)/Ed(0-), so Lee et al. (2002) converts the above-surface Rrs = Lu(0+)/Ed(0+).
     rrs = Rrs / (0.52 + 1.7 * Rrs)
 
-    # define total absorption as a sum of seawater absorption (asw), phytoplankton absorption (aph) 
-    # and CDOM plus other detrital matter (acdm)
+    # Total absorption is seawater absorption (asw) plus phytoplankton absorption (aph) plus CDOM and detrital matter (acdm).
     coeff_dir = Path(__file__).resolve().parent / "reference_data"
 
     asw = pd.read_csv(coeff_dir / 'aw_mcf16_350_700_1nm.csv', header=0)
     assert asw.iloc[50, 0] == 400, (
         f"Expected wavelength 400 at row 50 of aw_mcf16 CSV, got {asw.iloc[50, 0]}"
     )
-    asw = asw.iloc[50:, 1].values # rows 50+ = 400–700 nm
+    asw = asw.iloc[50:, 1].values  # rows 50+ = 400-700 nm
 
-    # aph = import A & B coefficients from aph_A_B_Coeffs_Sasha_RSE_paper.csv
-    # aph = A.*chl.^B; inversion model will solve for chl as an output
+    # aph = A * chl ** B, so the inversion solves for chl.
     AB_coefs = pd.read_csv(coeff_dir / 'aph_A_B_Coeffs_Sasha_RSE_paper.csv', header=0)
     A = AB_coefs.iloc[50:, 1].values
     B = AB_coefs.iloc[50:, 2].values
 
-    # acdm slope is a function of Rrs (just above surface):
-    # You will need to define Rrs490 and Rrs555 based on your Rrs data
+    # The acdm slope uses above-surface Rrs, not below-surface rrs.
     Rrs_490 = Rrs[490].values
     Rrs_555 = Rrs[555].values
 
-    acdm_s = -(0.01447 + 0.00033 * Rrs_490 / Rrs_555)  
-    acdm = np.exp(np.outer(acdm_s, wavelengths - 443))  # shape: (n_samples, n_wavelengths)
+    acdm_s = -(0.01447 + 0.00033 * Rrs_490 / Rrs_555)
+    acdm = np.exp(np.outer(acdm_s, wavelengths - 443))  # (n_samples,) outer (n_wavelengths,) -> (n_samples, n_wavelengths)
 
-    # define backscattering as a sum of seawater backscattering (bbsw) and backscattering by particles (bbp)
-    # bb_tot = bbsw + bbp
+    # Total backscattering is seawater backscattering (bbsw) plus particle backscattering (bbp).
     bsw = []
 
-    # bsw comes from Zhang et al. (2009)
     for i in range(n):
-        _, bsw_i, _, _ = betasw124_ZHH2009(wavelengths, float(sal[i]), float(temp[i])) 
+        _, bsw_i, _, _ = betasw124_ZHH2009(wavelengths, float(sal[i]), float(temp[i]))
         bsw.append(bsw_i)
 
-    bsw = np.array(bsw)        
-    bbsw = 0.5 * bsw.T         
+    bsw = np.array(bsw)  # n_samples arrays of (n_wavelengths,) -> (n_samples, n_wavelengths)
+    bbsw = 0.5 * bsw.T  # (n_samples, n_wavelengths) -> (n_wavelengths, n_samples)
 
-    # bbp slope is a function of rrs (just below surface):
-    # You will need to define rrs440 and rrs555 based on your rrs data
+    # The bbp slope uses below-surface rrs, not above-surface Rrs.
     rrs_440 = rrs[440].values
     rrs_555 = rrs[555].values
     bbp_s = 2.0 * (1 - 1.2 * np.exp(-0.9 * rrs_440 / rrs_555))
-    bbp = (443 / wavelengths.reshape(-1, 1)) ** bbp_s 
+    bbp = (443 / wavelengths.reshape(-1, 1)) ** bbp_s  # (n_wavelengths,) -> (n_wavelengths, 1), broadcast with bbp_s (n_samples,) -> (n_wavelengths, n_samples)
 
-    # Put IOPs together: run for each spectrum
-    IOPs = np.empty((n, 3))
+    IOPs = np.empty((n, 3))  # columns are chl, acdm at 443 nm in m^-1, bbp at 443 nm in m^-1
 
-    for i in range(n):  
+    for i in range(n):
         rrs_i = rrs.iloc[i, :].values
-        asw_t = asw               
+        asw_t = asw
         bbsw_i = bbsw[:, i]
         bbp_i = bbp[:, i]
         A_t = A
@@ -330,26 +314,23 @@ def get_rrs_residuals(
         iops_i = gsm_invert(rrs_i, asw_t, bbsw_i, bbp_i, A_t, B_t, acdm_i)
         IOPs[i, :] = iops_i
 
-    asw_ = asw[:, np.newaxis]
-    A_ = A[:, np.newaxis]
-    B_ = B[:, np.newaxis]
+    asw_ = asw[:, np.newaxis]  # (n_wavelengths,) -> (n_wavelengths, 1)
+    A_ = A[:, np.newaxis]  # (n_wavelengths,) -> (n_wavelengths, 1)
+    B_ = B[:, np.newaxis]  # (n_wavelengths,) -> (n_wavelengths, 1)
 
-    # Reconstruct Rrs for each spectrum
-    a = asw_ + (A_ * (IOPs[:, 0]**B_)) + (acdm.T * IOPs[:, 1])
+    a = asw_ + (A_ * (IOPs[:, 0]**B_)) + (acdm.T * IOPs[:, 1])  # acdm.T: (n_samples, n_wavelengths) -> (n_wavelengths, n_samples), so a is (n_wavelengths, n_samples)
     bb = bbsw + bbp * IOPs[:, 2]
 
     rrsP = bb / (a + bb)
 
-    # Gordon coefficients
-    g1, g2 = 0.0949, 0.0794
+    g1, g2 = 0.0949, 0.0794  # Gordon et al. (1988) coefficients
 
     modrrs = (g1 + g2 * rrsP) * rrsP
 
-    # convert back to Rrs
+    # Inverse of the Lee et al. (2002) relation: below-surface rrs back to above-surface Rrs.
     modRrs = (0.52 * modrrs) / (1 - 1.7 * modrrs)
 
-    # Residual between measured and modeled (to use for Kramer_Rrs_pigments)
-    rrsD = rrs.T - modrrs
-    RrsD = Rrs.T - modRrs
+    rrsD = rrs.T - modrrs  # rrs.T: (n_samples, n_wavelengths) -> (n_wavelengths, n_samples)
+    RrsD = Rrs.T - modRrs  # Rrs.T: (n_samples, n_wavelengths) -> (n_wavelengths, n_samples)
 
     return rrsD, RrsD

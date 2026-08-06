@@ -10,7 +10,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/collocate_pace_%j.log
 
-# PACE collocation — iterates daily L3 files, extracts Rrs pixels inside
+# PACE collocation - iterates daily L3 files, extracts Rrs pixels inside
 # eddy contours. Memory-bound (loads full L3 grid per file), not CPU-bound.
 
 cd ~/projects/eddy-tracking
