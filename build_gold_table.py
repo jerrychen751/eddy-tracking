@@ -7,6 +7,7 @@ Aggregates per-pixel pigments to eddy-interior means, joins track and environmen
 import argparse
 import datetime as dt
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -45,7 +46,7 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
             for date, group in pigments.groupby("date"):
                 row = {
                     "track_id": int(group["track_id"].iloc[0]),
-                    "date": pd.Timestamp(date),
+                    "date": pd.Timestamp(date),  # pyright: ignore[reportArgumentType]
                     "polarity": polarity_value,
                     "center_lon": float(group["center_lon"].mean()),
                     "center_lat": float(group["center_lat"].mean()),
@@ -157,7 +158,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     cfg = load_config(experiment)
     gulf_stream_dir = resolve_output_dir(experiment, "gulf_stream")
@@ -193,7 +194,7 @@ def main(experiment: str | None = None) -> None:
 
     track_observations, track_lifetimes = build_track_features(experiment)
     eddy_days = pd.merge_asof(
-        eddy_days.sort_values("date"),
+        eddy_days.sort_values("date"),  # pyright: ignore[reportCallIssue]
         track_observations.sort_values("date"),
         on="date",
         by=["polarity", "track_id"],
@@ -237,7 +238,7 @@ def main(experiment: str | None = None) -> None:
         )
 
     movement = pd.read_parquet(gulf_stream_dir / "eddy_movement.parquet")
-    movement["polarity"] = movement["polarity"].map({"anticyclone": 0, "cyclone": 1})
+    movement["polarity"] = movement["polarity"].map({"anticyclone": 0, "cyclone": 1})  # pyright: ignore[reportArgumentType]
     eddy_days = eddy_days.merge(
         movement[["polarity", "track_id", "movement"]],
         on=["polarity", "track_id"],

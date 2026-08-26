@@ -17,7 +17,7 @@ def parse_date_range(date_range: list[str] | None) -> tuple[dt.date, dt.date] | 
     return dt.date.fromisoformat(date_range[0]), dt.date.fromisoformat(date_range[1])
 
 
-def in_subset(
+def is_in_subset(
     center_lon: float,
     center_lat: float,
     day: dt.date,
@@ -27,9 +27,7 @@ def in_subset(
     """
     Whether an eddy observation falls within the optional box and date window.
 
-    region is {"lon_range": [lo, hi], "lat_range": [lo, hi]} in -180/180 longitude, such as {"lon_range": [-81, -60], "lat_range": [30, 45]}, or None for no spatial filter.
-    date_range is an inclusive (start, end) pair or None.
-    Every bound is inclusive, and a None filter always passes.
+    region is {"lon_range": [lo, hi], "lat_range": [lo, hi]} in -180/180 longitude, such as {"lon_range": [-81, -60], "lat_range": [30, 45]}, or None for no spatial filter. date_range is an inclusive (start, end) pair or None. Every bound is inclusive, and a None filter always passes.
     """
     if date_range is not None:
         start, end = date_range

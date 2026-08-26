@@ -9,11 +9,7 @@ def read_sb(path: Path | str, below_detection: str = "nan") -> tuple[pd.DataFram
     """
     Read one SeaBASS file into a DataFrame and its header dict.
 
-    below_detection sets how to treat the /below_detection_limit sentinel: "nan" reads it as NaN, "zero" reads it as 0.0.
-    Returns (df, header).
-    df holds one row per sample, with one column per name in the /fields header, such as "/fields=date,time,lat,lon,depth,Tot_Chl_a".
-    df.attrs["units"] maps each field to its /units value, such as "Tot_Chl_a" to "mg/m^3".
-    header maps each /key=value header line to its value, without the leading slash.
+    below_detection sets how to treat the /below_detection_limit sentinel: "nan" reads it as NaN, "zero" reads it as 0.0. Returns (df, header). df holds one row per sample, with one column per name in the /fields header, such as "/fields=date,time,lat,lon,depth,Tot_Chl_a". df.attrs["units"] maps each field to its /units value, such as "Tot_Chl_a" to "mg/m^3". header maps each /key=value header line to its value, without the leading slash.
     """
     if below_detection not in ("nan", "zero"):
         raise ValueError(f"below_detection must be 'nan' or 'zero', got {below_detection!r}")
@@ -73,10 +69,7 @@ def read_hplc_dir(hplc_dir: Path | str, below_detection: str = "nan") -> pd.Data
     """
     Read every .sb file under hplc_dir into one combined DataFrame.
 
-    Adds a 'cruise' and 'source_file' column so each row keeps its origin.
-    Adds a 'datetime' column when the files carry 'date' and 'time' fields.
-    combined.attrs["units"] maps each field to its unit.
-    Raises ValueError when two files give one field different units.
+    Adds a 'cruise' and 'source_file' column so each row keeps its origin. Adds a 'datetime' column when the files carry 'date' and 'time' fields. combined.attrs["units"] maps each field to its unit. Raises ValueError when two files give one field different units.
     """
     hplc_dir = Path(hplc_dir)
     frames: list[pd.DataFrame] = []

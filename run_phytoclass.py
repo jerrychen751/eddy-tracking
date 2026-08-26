@@ -1,8 +1,7 @@
 """
 Run Phytoclass PFT decomposition on SDP pigment outputs.
 
-Processes each eddy independently in parallel: loads its pigment Parquet file, runs SA + NNLS, and writes a per-eddy PFT Parquet file.
-Eddies are sorted largest-first so the long-running ones start early and smaller eddies fill in the remaining workers as they free up.
+Processes each eddy independently in parallel: loads its pigment Parquet file, runs SA + NNLS, and writes a per-eddy PFT Parquet file. Eddies are sorted largest-first so the long-running ones start early and smaller eddies fill in the remaining workers as they free up.
 """
 
 import argparse
@@ -10,6 +9,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -53,7 +53,7 @@ def process_eddy(
     ]
 
     pft_abundances = run_phytoclass(
-        pigments[pigment_columns],
+        pigments[pigment_columns],  # pyright: ignore[reportArgumentType]
         f_matrix=settings.f_matrix,
         min_max=settings.min_max,
         seed=settings.seed,
@@ -64,7 +64,7 @@ def process_eddy(
     )
 
     for col_idx, column in enumerate(METADATA_COLS):
-        pft_abundances.insert(col_idx, column, metadata[column].values)
+        pft_abundances.insert(col_idx, column, metadata[column].to_numpy())  # pyright: ignore[reportAttributeAccessIssue]
 
     pft_abundances.to_parquet(out_path, index=False)
 
@@ -141,7 +141,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     cfg = load_config(experiment)
     model_cfg = cfg["phytoclass"]

@@ -1,8 +1,7 @@
 """
 Identify eddies in daily SWOT L4 SSH files in parallel.
 
-For each daily NetCDF, subsets to the configured lon/lat region, applies a Bessel high-pass filter on ADT, and runs PET contour-based identification.
-Writes per-day cyclonic and anticyclonic eddy observation files to eddy_id/.
+For each daily NetCDF, subsets to the configured lon/lat region, applies a Bessel high-pass filter on ADT, and runs PET contour-based identification. Writes per-day cyclonic and anticyclonic eddy observation files to eddy_id/.
 """
 
 import argparse
@@ -10,6 +9,7 @@ import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import xarray as xr
@@ -109,7 +109,7 @@ def main(experiment: str | None = None) -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
         args = parser.parse_args()
-        experiment = args.experiment
+        experiment = cast(str, args.experiment)
     cfg = load_config(experiment)
     longitude_range = tuple(cfg["base"]["region"]["lon_range"])
     latitude_range = tuple(cfg["base"]["region"]["lat_range"])

@@ -1,8 +1,7 @@
 """
 Find the Gulf Stream jet-core axis per date from SWOT SSH, and classify each eddy track's movement relative to it.
 
-The axis is an ordered streamline traced through the fastest Gulf Stream core flow in the Gulf Stream latitude band.
-Movement (NN/NS/SN/SS) compares an eddy's geographic side of the axis (north/south) at birth vs death.
+The axis is an ordered streamline traced through the fastest Gulf Stream core flow in the Gulf Stream latitude band. Movement (NN/NS/SN/SS) compares an eddy's geographic side of the axis (north/south) at birth vs death.
 
 Outputs to silver/gulf_stream/:
   - streamline.parquet holds one row per ordered centerline point: date, point_idx, lon, lat
@@ -13,6 +12,7 @@ import argparse
 import datetime as dt
 import re
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -164,7 +164,7 @@ def index_centerlines_by_date(streamline_df: pd.DataFrame) -> dict[dt.date, Gulf
     centerlines: dict[dt.date, GulfStreamCenterline] = {}
     for date, grp in streamline_df.groupby("date"):
         ordered = grp.sort_values("point_idx")
-        centerlines[pd.Timestamp(date).date()] = GulfStreamCenterline(
+        centerlines[pd.Timestamp(date).date()] = GulfStreamCenterline(  # pyright: ignore[reportArgumentType]
             ordered["lon"].to_numpy(),
             ordered["lat"].to_numpy(),
         )
@@ -177,8 +177,7 @@ def compute_signed_distance_km(
     """
     Signed shortest distance from an eddy center to an ordered streamline.
 
-    Positive (side 'N') means the eddy is geographically north of the nearest point on the jet, negative ('S') south.
-    Returns (nan, '') if the streamline has too few finite points.
+    Positive (side 'N') means the eddy is geographically north of the nearest point on the jet, negative ('S') south. Returns (nan, '') if the streamline has too few finite points.
     """
     streamline_lon = np.asarray(streamline_lon, dtype=float)
     streamline_lat = np.asarray(streamline_lat, dtype=float)
@@ -259,7 +258,7 @@ def main(experiment: str | None = None) -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
         args = parser.parse_args()
-        experiment = args.experiment
+        experiment = cast(str, args.experiment)
 
     cfg = load_config(experiment)
     swot_dir = resolve_data_dir(cfg, "swot_dir")
@@ -276,7 +275,7 @@ def main(experiment: str | None = None) -> None:
     streamline_rows = []
     centerline_by_date: dict[dt.date, GulfStreamCenterline] = {}
     for fp in swot_files:
-        date = dt.datetime.strptime(re.search(r"\d{8}", fp.name).group(), "%Y%m%d").date()
+        date = dt.datetime.strptime(re.search(r"\d{8}", fp.name).group(), "%Y%m%d").date()  # pyright: ignore[reportOptionalMemberAccess]
         centerline = trace_streamline_for_file(fp)
         centerline_by_date[date] = centerline
         streamline_rows.append(pd.DataFrame({
@@ -296,7 +295,7 @@ def main(experiment: str | None = None) -> None:
 
     obs = load_track_observations(cyclone_track_dir, anticyclone_track_dir)
     movement_rows = []
-    for (polarity, track_id), grp in obs.groupby(["polarity", "track_id"]):
+    for (polarity, track_id), grp in obs.groupby(["polarity", "track_id"]):  # pyright: ignore[reportGeneralTypeIssues]
         grp = grp.sort_values("date")
         birth, death = grp.iloc[0], grp.iloc[-1]
         _, birth_side = _classify_streamline_side(centerline_by_date, birth)

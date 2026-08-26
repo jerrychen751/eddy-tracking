@@ -6,6 +6,7 @@ For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS, r
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -47,7 +48,7 @@ def process_eddy(
     wavelengths = np.array(
         [float(column.split("_")[1]) for column in rrs_columns]
     )
-    raw_rrs = observations[rrs_columns].values
+    raw_rrs = observations[rrs_columns].to_numpy()
 
     # raw_rrs (n_pixels, n_native_wavelengths) -> processed_rrs (n_pixels, n_processed_wavelengths)
     processed_wavelengths, processed_rrs = preprocess_rrs_batch(
@@ -57,9 +58,9 @@ def process_eddy(
     sst_values, sss_values = sample_ancillary(
         sst_df,
         sss_df,
-        lons=observations["pixel_lon"].values,
-        lats=observations["pixel_lat"].values,
-        times=pd.to_datetime(observations["date"]).values,
+        lons=observations["pixel_lon"].to_numpy(),
+        lats=observations["pixel_lat"].to_numpy(),
+        times=pd.to_datetime(observations["date"]).to_numpy(),
     )
 
     # The GSM physics model needs both ancillary values for backscattering.
@@ -95,11 +96,11 @@ def process_eddy(
     )
 
     for col_idx, column in enumerate(METADATA_COLS):
-        pigments.insert(col_idx, column, observations[column].values)
+        pigments.insert(col_idx, column, observations[column].to_numpy())  # pyright: ignore[reportAttributeAccessIssue]
 
     pigments.to_parquet(out_path, index=False)
 
-    n_dates = observations["date"].nunique()
+    n_dates = observations["date"].nunique()  # pyright: ignore[reportAttributeAccessIssue]
     print(
         f"output_file: {out_path.name}\n"
         f"pixels_written: {len(pigments)}\n"
@@ -113,7 +114,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     cfg = load_config(experiment)
     sst_dir = resolve_data_dir(cfg, "sst_dir")

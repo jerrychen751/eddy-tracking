@@ -1,8 +1,7 @@
 """
 Compute the per-date background pigment means: the denominator of the eddy log-ratio targets.
 
-For each PACE composite, background pixels are open-water pixels that are both calm (|normalized relative vorticity| < 0.1, from the matching SWOT day) and outside every tracked eddy contour active during the window.
-Their Rrs spectra run through the same SDP model as the eddy pixels, and the per-pigment mean over those pixels is the background for that date.
+For each PACE composite, background pixels are open-water pixels that are both calm (|normalized relative vorticity| < 0.1, from the matching SWOT day) and outside every tracked eddy contour active during the window. Their Rrs spectra run through the same SDP model as the eddy pixels, and the per-pigment mean over those pixels is the background for that date.
 
 Writes silver/pigments/background/bg_mean.parquet: one row per composite date with columns date, bg_mean_<pigment> (13), and n_bg_pixels.
 """
@@ -12,6 +11,7 @@ import datetime as dt
 import re
 from collections import defaultdict
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -62,8 +62,7 @@ def parse_pace_window(filename: str, temporal_res: str) -> tuple[dt.date, dt.dat
     """
     (repr_date, win_start, win_end) for a PACE file, or None if it doesn't parse.
 
-    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date.
-    For 8-day composites it is the window midpoint; for daily files all three dates are the same day.
+    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date. For 8-day composites it is the window midpoint; for daily files all three dates are the same day.
     """
     if temporal_res == "8D":
         m = re.search(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.", filename)
@@ -127,8 +126,7 @@ def compute_calm_mask_on_pace(swot_fp, pace_lon: np.ndarray, pace_lat: np.ndarra
     """
     Boolean (lat, lon) PACE-grid mask of calm water for one SWOT day.
 
-    Interpolates |Ro| from the coarser SWOT grid onto the PACE pixels and thresholds it.
-    Pixels saved as NaN in the SWOT bronze file interpolate to NaN and fail the comparison, so they are treated as not-calm.
+    Interpolates |Ro| from the coarser SWOT grid onto the PACE pixels and thresholds it. Pixels saved as NaN in the SWOT bronze file interpolate to NaN and fail the comparison, so they are treated as not-calm.
     """
     # The DUACS/MIOST source variable is named relative_vorticity, but these files store normalized relative vorticity, not raw zeta in s^-1.
     # The values are Rossby number (Ro = zeta/f), so "calm" water is a direct threshold on |Ro|.
@@ -145,7 +143,7 @@ def compute_calm_mask_on_pace(swot_fp, pace_lon: np.ndarray, pace_lat: np.ndarra
     return on_pace < bg_threshold_rossby
 
 
-def in_any_contour(
+def is_in_any_contour(
     contours: list[tuple[np.ndarray, np.ndarray]], lons: np.ndarray, lats: np.ndarray
 ) -> np.ndarray:
     """Boolean over the given points: inside at least one eddy contour polygon."""
@@ -167,7 +165,7 @@ def run_sdp_filtering_nonconvergent(
         return run_sdp(rrs=rrs, wl=wavelengths, sst=sst, sss=sss), 0
     except GSMInversionError:
         if len(rrs) == 1:
-            return pd.DataFrame(columns=PIGMENTS), 1
+            return pd.DataFrame(columns=list(PIGMENTS)), 1  # pyright: ignore[reportArgumentType]
 
     midpoint = len(rrs) // 2
     left, left_dropped = run_sdp_filtering_nonconvergent(
@@ -186,7 +184,7 @@ def run_sdp_filtering_nonconvergent(
     return (
         pd.concat(predictions, ignore_index=True)
         if predictions
-        else pd.DataFrame(columns=PIGMENTS),
+        else pd.DataFrame(columns=list(PIGMENTS)),  # pyright: ignore[reportArgumentType]
         left_dropped + right_dropped,
     )
 
@@ -199,19 +197,18 @@ def compute_background_means(
     """
     Run the SDP model on background pixels and average each pigment.
 
-    Mirrors run_sdp.process_eddy: preprocess Rrs to 1 nm, sample nearest SST/SSS, drop pixels missing either, run SDP.
-    Returns bg_mean_<pigment> for the 13 pigments plus n_bg_pixels, or None if no pixel survives the SST/SSS filter.
+    Mirrors run_sdp.process_eddy: preprocess Rrs to 1 nm, sample nearest SST/SSS, drop pixels missing either, run SDP. Returns bg_mean_<pigment> for the 13 pigments plus n_bg_pixels, or None if no pixel survives the SST/SSS filter.
     """
     rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
     wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
-    wl_processed, rrs_processed = preprocess_rrs_batch(wavelengths, df[rrs_cols].values)
+    wl_processed, rrs_processed = preprocess_rrs_batch(wavelengths, df[rrs_cols].to_numpy())
 
     sst_vals, sss_vals = sample_ancillary(
         sst_df,
         sss_df,
-        lons=df["pixel_lon"].values,
-        lats=df["pixel_lat"].values,
-        times=pd.to_datetime(df["date"]).values,
+        lons=df["pixel_lon"].to_numpy(),
+        lats=df["pixel_lat"].to_numpy(),
+        times=pd.to_datetime(df["date"]).to_numpy(),
     )
     valid = np.isfinite(sst_vals) & np.isfinite(sss_vals)
     if valid.sum() == 0:
@@ -248,7 +245,7 @@ def main(
     """Compute and write per-date background pigment means."""
     if experiment is None:
         args = parse_args()
-        experiment = args.experiment
+        experiment = cast(str, args.experiment)
         subsample = args.subsample
         limit = args.limit
 
@@ -320,7 +317,7 @@ def main(
             window_contours.extend(eddy_contours.get(day, []))
             day += dt.timedelta(days=1)
         if window_contours:
-            inside = in_any_contour(
+            inside = is_in_any_contour(
                 window_contours, lon2d.ravel()[candidate], lat2d.ravel()[candidate]  # (lat, lon) -> (lat*lon,) -> (n_candidate,) each
             )
             candidate = candidate[~inside]
@@ -342,7 +339,7 @@ def main(
             "pixel_lon": lon2d.ravel()[candidate],  # (lat, lon) -> (lat*lon,) -> (n_candidate,)
             "pixel_lat": lat2d.ravel()[candidate],  # (lat, lon) -> (lat*lon,) -> (n_candidate,)
         })
-        rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w}" for w in wavelengths])  # (lat*lon, wavelength) -> (n_candidate, wavelength)
+        rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w}" for w in wavelengths])  # pyright: ignore[reportArgumentType]  # (lat*lon, wavelength) -> (n_candidate, wavelength)
         df = pd.concat([df, rrs_df], axis=1)
 
         means = compute_background_means(df, sst_df, sss_df)

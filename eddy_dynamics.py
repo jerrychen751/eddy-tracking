@@ -1,15 +1,14 @@
 """
 Compute per-eddy dynamical diagnostics from SWOT.
 
-The DUACS/MIOST source variable is named relative_vorticity, but in the files used here it is not raw relative vorticity in s^-1.
-It is already normalized by the Coriolis parameter, so the stored quantity is Rossby number (Ro = zeta/f).
-Outputs one dynamics.parquet per polarity under silver/eddy_dynamics/.
+The DUACS/MIOST source variable is named relative_vorticity, but in the files used here it is not raw relative vorticity in s^-1. It is already normalized by the Coriolis parameter, so the stored quantity is Rossby number (Ro = zeta/f). Outputs one dynamics.parquet per polarity under silver/eddy_dynamics/.
 """
 
 import argparse
 import datetime as dt
 import re
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -118,7 +117,7 @@ def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.Dat
     ]
     rows = []
     for date, grp in obs.groupby("date"):
-        swot_fp = find_nearest_swot_file(swot_files, pd.Timestamp(date).date())
+        swot_fp = find_nearest_swot_file(swot_files, pd.Timestamp(date).date())  # pyright: ignore[reportArgumentType]
         if swot_fp is None:
             continue
         lon, lat, rossby_number = load_rossby_field(swot_fp)
@@ -127,20 +126,20 @@ def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.Dat
                 rossby_number,
                 lon,
                 lat,
-                row.contour_lon,
-                row.contour_lat,
-                row.center_lon,
-                row.center_lat,
+                row.contour_lon,  # pyright: ignore[reportAttributeAccessIssue]
+                row.contour_lat,  # pyright: ignore[reportAttributeAccessIssue]
+                row.center_lon,  # pyright: ignore[reportAttributeAccessIssue]
+                row.center_lat,  # pyright: ignore[reportAttributeAccessIssue]
             )
             rows.append({
-                "polarity": row.polarity,
-                "track_id": int(row.track_id),
-                "date": row.date,
-                "center_lon": float(row.center_lon),
-                "center_lat": float(row.center_lat),
+                "polarity": row.polarity,  # pyright: ignore[reportAttributeAccessIssue]
+                "track_id": int(row.track_id),  # pyright: ignore[reportAttributeAccessIssue]
+                "date": row.date,  # pyright: ignore[reportAttributeAccessIssue]
+                "center_lon": float(row.center_lon),  # pyright: ignore[reportAttributeAccessIssue]
+                "center_lat": float(row.center_lat),  # pyright: ignore[reportAttributeAccessIssue]
                 **stats,
             })
-    return pd.DataFrame(rows, columns=dynamics_columns)
+    return pd.DataFrame(rows, columns=dynamics_columns)  # pyright: ignore[reportArgumentType]
 
 
 def write_dynamics(experiment: str, dynamics: pd.DataFrame) -> None:
@@ -161,12 +160,12 @@ def main(experiment: str | None = None) -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
         args = parser.parse_args()
-        experiment = args.experiment
+        experiment = cast(str, args.experiment)
 
     cfg = load_config(experiment)
     swot_date_re = re.compile(r"\d{8}")
     swot_files = {
-        dt.datetime.strptime(swot_date_re.search(fp.name).group(), "%Y%m%d").date(): fp
+        dt.datetime.strptime(swot_date_re.search(fp.name).group(), "%Y%m%d").date(): fp  # pyright: ignore[reportOptionalMemberAccess]
         for fp in sorted(resolve_data_dir(cfg, "swot_dir").glob("*.nc"))
     }
     obs = load_track_observations(experiment)

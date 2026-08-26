@@ -95,8 +95,8 @@ def read_pace_l2(
     line_count = len(line_positions)
     pixel_count = len(pixel_positions)
     row_count = line_count * pixel_count
-    rrs_columns = _spectral_column_names("Rrs", wavelengths_nm)
-    rrs_unc_columns = _spectral_column_names("Rrs_unc", wavelengths_nm)
+    rrs_columns = _build_spectral_column_names("Rrs", wavelengths_nm)
+    rrs_unc_columns = _build_spectral_column_names("Rrs_unc", wavelengths_nm)
 
     # Spectral values stay wide because SDP reads one row per pixel.
     df = pd.DataFrame(
@@ -130,8 +130,8 @@ def read_pace_l2(
     df = pd.concat(
         [
             df,
-            pd.DataFrame(rrs, columns=rrs_columns),
-            pd.DataFrame(rrs_unc, columns=rrs_unc_columns),
+            pd.DataFrame(rrs, columns=rrs_columns),  # pyright: ignore[reportArgumentType]
+            pd.DataFrame(rrs_unc, columns=rrs_unc_columns),  # pyright: ignore[reportArgumentType]
         ],
         axis="columns",
     )
@@ -176,7 +176,7 @@ def _resolve_positions(
     return selected
 
 
-def _spectral_column_names(
+def _build_spectral_column_names(
     product_name: str,
     wavelengths_nm: np.ndarray,
 ) -> list[str]:
@@ -258,7 +258,7 @@ def read_multiple_pace_l2(
 
     # len(fps) frames of (row_count_i, n_columns) -> (sum of row_count_i, n_columns)
     combined = pd.concat(frames, ignore_index=True)
-    combined.attrs = shared_attrs
+    combined.attrs = shared_attrs  # pyright: ignore[reportAttributeAccessIssue]
     combined.attrs["source_files"] = tuple(source_files)
     combined.attrs["product_names"] = tuple(product_names)
     combined.attrs["processing_versions"] = tuple(processing_versions)

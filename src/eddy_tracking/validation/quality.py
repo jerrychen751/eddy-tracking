@@ -34,22 +34,17 @@ def apply_l2_quality_flags(
     """
     Apply Level-2 quality flags to a PACE observation table.
 
-    The input must have the schema from `read_multiple_pace_l2`.
-    It must contain `source_file`, `scan_line`, `pixel`, `datetime`, `latitude`, `longitude`, `aot_865`, `l2_flags`, `Rrs_*`, and `Rrs_unc_*` columns.
-    It must also contain `l2_flag_masks`, `rrs_columns`, and `rrs_unc_columns` in `DataFrame.attrs`.
+    The input must have the schema from `read_multiple_pace_l2`. It must contain `source_file`, `scan_line`, `pixel`, `datetime`, `latitude`, `longitude`, `aot_865`, `l2_flags`, `Rrs_*`, and `Rrs_unc_*` columns. It must also contain `l2_flag_masks`, `rrs_columns`, and `rrs_unc_columns` in `DataFrame.attrs`.
 
-    If `to_nan` is true, this function keeps all rows.
-    It replaces `aot_865`, `Rrs_*`, and `Rrs_unc_*` values with NaN in rows with excluded flags.
-    It preserves all metadata columns.
+    If `to_nan` is true, this function keeps all rows. It replaces `aot_865`, `Rrs_*`, and `Rrs_unc_*` values with NaN in rows with excluded flags. It preserves all metadata columns.
 
     If `to_nan` is false, this function removes rows with excluded flags and resets the result index.
 
-    This function does not change the input.
-    It prints a row count summary and records the applied flags in `attrs["excluded_l2_flags"]`.
+    This function does not change the input. It prints a row count summary and records the applied flags in `attrs["excluded_l2_flags"]`.
     """
     if "l2_flags" not in df.columns:
         raise KeyError("DataFrame must contain an 'l2_flags' column")
-    if df["l2_flags"].isna().any():
+    if df["l2_flags"].isna().any():  # pyright: ignore[reportGeneralTypeIssues]
         raise ValueError("l2_flags cannot contain missing values")
 
     flag_masks = df.attrs.get("l2_flag_masks")

@@ -12,7 +12,7 @@ import argparse
 import datetime as dt
 import re
 from collections import defaultdict
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,7 @@ from utils.config import (
 from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
     TrackEddiesObservations,
 )
-from eddy_tracking.utils.subset import in_subset, parse_date_range
+from eddy_tracking.utils.subset import is_in_subset, parse_date_range
 
 PET_EPOCH = dt.date(1950, 1, 1)
 
@@ -51,9 +51,9 @@ def collocate_one_observation(
     contour_lon: np.ndarray,
     contour_lat: np.ndarray,
     min_coverage: float,
-) -> dict[str, np.ndarray | float] | None:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float] | None:
     """
-    Return valid Rrs pixels inside a contour when coverage meets the threshold.
+    Return valid Rrs pixels inside a contour when coverage meets the threshold, as (rrs, lon, lat, coverage).
 
     NASA L3 quality flags are already represented as NaN values in ``rrs``.
     """
@@ -80,12 +80,12 @@ def collocate_one_observation(
     if coverage < min_coverage:
         return None
 
-    return {
-        "rrs": flattened_rrs[valid_pixels],  # (n_lat*n_lon, n_wavelength) -> (n_valid, n_wavelength)
-        "lon": grid_longitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
-        "lat": grid_latitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
-        "coverage": coverage,
-    }
+    return (
+        flattened_rrs[valid_pixels],  # (n_lat*n_lon, n_wavelength) -> (n_valid, n_wavelength)
+        grid_longitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
+        grid_latitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
+        coverage,
+    )
 
 
 def build_date_eddy_index(
@@ -122,7 +122,7 @@ def build_date_eddy_index(
             day = PET_EPOCH + dt.timedelta(days=int(times[obs_idx]))
             center_lon = float((center_lons[obs_idx] + 180) % 360 - 180)
             center_lat = float(center_lats[obs_idx])
-            if not in_subset(center_lon, center_lat, day, region, date_range):
+            if not is_in_subset(center_lon, center_lat, day, region, date_range):
                 continue
 
             obs = EddyObs(
@@ -164,7 +164,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     cfg = load_config(experiment)
     collocation_cfg = cfg["collocate_pace"]
@@ -303,20 +303,21 @@ def main(experiment: str | None = None) -> None:
             )
             if result is None:
                 continue
+            valid_rrs, valid_lon, valid_lat, coverage = result
 
-            n_pixels = len(result["lon"])
+            n_pixels = len(valid_lon)
             days_since_pet_epoch = (representative_date - PET_EPOCH).days
             # 7x (n_pixels,) + (n_pixels, n_wavelength) -> (n_pixels, 7 + n_wavelength), matching METADATA_COLS + rrs_columns.
             rows = np.column_stack(
                 [
                     np.full(n_pixels, eddy.track_id),
                     np.full(n_pixels, days_since_pet_epoch),
-                    result["lon"],
-                    result["lat"],
+                    valid_lon,
+                    valid_lat,
                     np.full(n_pixels, eddy.center_lon),
                     np.full(n_pixels, eddy.center_lat),
-                    np.full(n_pixels, result["coverage"]),
-                    result["rrs"],
+                    np.full(n_pixels, coverage),
+                    valid_rrs,
                 ]
             )
             rows_by_eddy[(eddy.track_id, eddy.polarity)].append(rows)
@@ -326,7 +327,7 @@ def main(experiment: str | None = None) -> None:
                 f"polarity: {eddy.polarity}\n"
                 f"track_id: {eddy.track_id}\n"
                 f"pixels: {n_pixels}\n"
-                f"coverage: {result['coverage']:.2f}"
+                f"coverage: {coverage:.2f}"
             )
 
     print(
@@ -339,11 +340,11 @@ def main(experiment: str | None = None) -> None:
     n_written = 0
     for (track_id, polarity), row_chunks in sorted(rows_by_eddy.items()):
         # list of (n_pixels_i, 7 + n_wavelength) -> (sum_i n_pixels_i, 7 + n_wavelength)
-        observations = pd.DataFrame(np.vstack(row_chunks), columns=columns)
+        observations = pd.DataFrame(np.vstack(row_chunks), columns=columns)  # pyright: ignore[reportArgumentType]
         observations["track_id"] = observations["track_id"].astype(int)
         observations["date"] = (
             pd.Timestamp("1950-01-01")
-            + pd.to_timedelta(observations["date"], unit="D")
+            + pd.to_timedelta(observations["date"], unit="D")  # pyright: ignore[reportArgumentType, reportCallIssue]
         )
 
         out_dir = output_dirs[polarity]

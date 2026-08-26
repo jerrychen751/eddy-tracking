@@ -7,6 +7,7 @@ Builds frame-to-frame eddy correspondences from the daily .nc files produced by 
 import argparse
 import shutil
 from pathlib import Path
+from typing import cast
 
 from utils.config import load_config, resolve_output_dir
 from eddy_tracking.packages.py_eddy_tracker.tracking import Correspondances
@@ -88,7 +89,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     cfg = load_config(experiment)
     tracking_cfg = cfg["eddy_track"]

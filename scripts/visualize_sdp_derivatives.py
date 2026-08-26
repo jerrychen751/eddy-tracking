@@ -1,16 +1,17 @@
 """
 Visualize the SDP preprocessing chain on a real collocated PACE pixel.
 
-Produces a 4-panel figure: raw Rrs + GSM model fit, residual (observed - modeled), first spectral derivative of residual, second spectral derivative of residual.
-Makes the case for 2nd derivative feature engineering visually obvious.
+Produces a 4-panel figure: raw Rrs + GSM model fit, residual (observed - modeled), first spectral derivative of residual, second spectral derivative of residual. Makes the case for 2nd derivative feature engineering visually obvious.
 """
 
 import sys
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 
 def main() -> None:
@@ -43,7 +44,7 @@ def main() -> None:
 
     rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
     wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
-    rrs_native = df[rrs_cols].values.mean(axis=0, keepdims=True) # (n_pixels, n_wavelengths) -> (1, n_wavelengths)
+    rrs_native = df[rrs_cols].to_numpy().mean(axis=0, keepdims=True) # (n_pixels, n_wavelengths) -> (1, n_wavelengths)
     print(
         f"pooled_pixels: {len(df)}\n"
         f"cyclones: {len(rrs_files)}\n"
@@ -59,7 +60,7 @@ def main() -> None:
     # Sample SST/SSS at the eddy-mean location and the median date, since we've averaged across the whole eddy's coverage period.
     center_lon = float(df["pixel_lon"].mean())
     center_lat = float(df["pixel_lat"].mean())
-    median_date = df["date"].sort_values().iloc[len(df) // 2]
+    median_date = df["date"].sort_values().iloc[len(df) // 2]  # pyright: ignore[reportCallIssue]
     sst, sss = sample_ancillary(
         sst_df, sss_df,
         lons=np.array([center_lon]),
@@ -90,7 +91,7 @@ def main() -> None:
     # Cubic-spline interpolation across it produces a non-physical bump that the 2nd derivative amplifies.
     O2_GAP = (588, 613)
 
-    fig, axes = plt.subplots(4, 1, figsize=(9, 10), sharex=True)
+    fig, axes = cast("tuple[Figure, np.ndarray]", plt.subplots(4, 1, figsize=(9, 10), sharex=True))
 
     def annotate(ax):
         ax.axvspan(*O2_GAP, color="#f0f0f0", zorder=0)

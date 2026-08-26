@@ -1,12 +1,9 @@
 """
 Sample PACE L3 chlor_a on the same eddy and background pixels the SDP stage used.
 
-This is the chlorophyll counterpart of `collocate_pace.py` plus `background.py`.
-It supports the empirical-fraction baseline, where a pigment is a fraction of total chlorophyll a instead of an SDP retrieval.
-Reading chlor_a on the SDP pixel sets keeps every eddy-day, mask, and background definition identical, so the two pigment fields differ only in how they turn light into pigment.
+This is the chlorophyll counterpart of `collocate_pace.py` plus `background.py`. It supports the empirical-fraction baseline, where a pigment is a fraction of total chlorophyll a instead of an SDP retrieval. Reading chlor_a on the SDP pixel sets keeps every eddy-day, mask, and background definition identical, so the two pigment fields differ only in how they turn light into pigment.
 
-Writes `silver/pace_chl/eddy_bg_chlor_a.parquet`: one row per eddy-day with the eddy-interior and background means of chlor_a, and the same means of chlor_a**b for one exponent b per pigment.
-A pigment written as a * chlor_a**b needs the mean of chlor_a**b over the pixel set, because the mean of a power is not the power of the mean.
+Writes `silver/pace_chl/eddy_bg_chlor_a.parquet`: one row per eddy-day with the eddy-interior and background means of chlor_a, and the same means of chlor_a**b for one exponent b per pigment. A pigment written as a * chlor_a**b needs the mean of chlor_a**b over the pixel set, because the mean of a power is not the power of the mean.
 
 Usage:
     python scripts/collocate_pace_chl.py <experiment> --exponents exponents.json
@@ -32,7 +29,7 @@ from background import (  # noqa: E402
     SWOT_SEARCH_DAYS,
     compute_calm_mask_on_pace,
     find_nearest_swot_file,
-    in_any_contour,
+    is_in_any_contour,
     index_swot_files_by_date,
     load_eddy_contours,
 )
@@ -70,8 +67,7 @@ def collocate_chlor_a(
     """
     Average PACE L3 chlor_a over the SDP eddy and background pixel sets.
 
-    exponents maps a pigment name to its power-law exponent b.
-    The result carries eddy_chl_mean, bg_chl_mean, and one eddy_chl_pow_<pigment> and bg_chl_pow_<pigment> column per entry, plus the pixel count behind each mean.
+    exponents maps a pigment name to its power-law exponent b. The result carries eddy_chl_mean, bg_chl_mean, and one eddy_chl_pow_<pigment> and bg_chl_pow_<pigment> column per entry, plus the pixel count behind each mean.
     """
     out_path = out_path or resolve_chl_path(experiment)
     data_dir = PROJECT_ROOT / "data" / experiment
@@ -131,14 +127,14 @@ def collocate_chlor_a(
         day_pixels = pixels[pixels["date"] == pd.Timestamp(repr_date)]
         if len(day_pixels):
             point = {
-                "lon": xr.DataArray(day_pixels["pixel_lon"].to_numpy(), dims="pixel"),
-                "lat": xr.DataArray(day_pixels["pixel_lat"].to_numpy(), dims="pixel"),
+                "lon": xr.DataArray(day_pixels["pixel_lon"].to_numpy(), dims="pixel"),  # pyright: ignore[reportAttributeAccessIssue]
+                "lat": xr.DataArray(day_pixels["pixel_lat"].to_numpy(), dims="pixel"),  # pyright: ignore[reportAttributeAccessIssue]
             }
             found = day_pixels.assign(
-                chlor_a=chlor_a.sel(**point, method="nearest").values,
-                usable=usable.sel(**point, method="nearest").values,
+                chlor_a=chlor_a.sel(point, method="nearest").values,
+                usable=usable.sel(point, method="nearest").values,
             )
-            for (track_id, polarity), group in found.groupby(["track_id", "polarity"]):
+            for (track_id, polarity), group in found.groupby(["track_id", "polarity"]):  # pyright: ignore[reportGeneralTypeIssues]
                 good = group.loc[group["usable"], "chlor_a"].to_numpy()
                 if good.size == 0:
                     continue
@@ -180,7 +176,7 @@ def collocate_chlor_a(
             day += dt.timedelta(days=1)
         if window_contours:
             # ravel()[candidate]: (n_lat, n_lon) -> (n_lat * n_lon,) -> (n_candidate,)
-            inside = in_any_contour(
+            inside = is_in_any_contour(
                 window_contours, lon_grid.ravel()[candidate], lat_grid.ravel()[candidate]
             )
             candidate = candidate[~inside]
@@ -230,8 +226,7 @@ def load_or_collocate(experiment: str, exponents: dict[str, float]) -> pd.DataFr
     """
     Read the cached chlorophyll table, recomputing when it is missing or stale.
 
-    Stale means built with different exponents.
-    Reusing it then would silently pair one pigment's power-law scale with another's exponent.
+    Stale means built with different exponents. Reusing it then would silently pair one pigment's power-law scale with another's exponent.
     """
     path = resolve_chl_path(experiment)
     sidecar = resolve_exponents_path(path)

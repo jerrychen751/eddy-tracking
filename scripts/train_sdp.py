@@ -14,7 +14,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import root_mean_squared_error
 
 
-def rrsModelTrain(
+def train_rrs_model(
     RrsD: np.ndarray,
     hplc_i: np.ndarray,
     pft_index: str,
@@ -25,11 +25,9 @@ def rrsModelTrain(
     seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame, dict[str, Any]]:
     """
-    Train PCA-based regression model for pigment prediction.
-    One set of coefficients are generated for one pigment at a time.
+    Train PCA-based regression model for pigment prediction. One set of coefficients are generated for one pigment at a time.
 
-    Uses a 75/25 train/validation split with k-fold CV within the training set.
-    For each permutation, the mean k-fold coefficients are unstandardized and validated against the held-out 25%.
+    Uses a 75/25 train/validation split with k-fold CV within the training set. For each permutation, the mean k-fold coefficients are unstandardized and validated against the held-out 25%.
 
     Note: max_pcs must be <= 0.75 * (1 - 1/k) * n_samples.
 
@@ -272,7 +270,7 @@ def rrsModelTrain(
         np.mean(mae_final), np.std(mae_final)
     ]
 
-    summary_gofs_df = pd.DataFrame([summary_gofs], columns=[
+    summary_gofs_df = pd.DataFrame([summary_gofs], columns=[  # pyright: ignore[reportArgumentType]
         'Mean_R2', 'SD_R2',
         'Mean_RMSE', 'SD_RMSE',
         'Mean_mean_pct_error', 'SD_mean_pct_error',
@@ -298,8 +296,7 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
     """
     Train SDP model on Rrs residuals and HPLC data.
 
-    Takes 2nd derivative of Rrs residuals, trains model for all 13 pigments using 100 permutations, 30 max PCs, 5-fold CV, MAE metric.
-    Saves A (wavelength coefficients, shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in src/eddy_tracking/packages/sdp/coefficients/.
+    Takes 2nd derivative of Rrs residuals, trains model for all 13 pigments using 100 permutations, 30 max PCs, 5-fold CV, MAE metric. Saves A (wavelength coefficients, shape [n_wl, 100]) and C (intercepts, shape [100]) to CSV files in src/eddy_tracking/packages/sdp/coefficients/.
     """
 
     diffD2 = np.diff(RrsD, 2, axis=0) # (n_wavelengths, n_samples) -> (n_wavelengths - 2, n_samples)
@@ -340,7 +337,7 @@ def train_model(RrsD: np.ndarray | pd.DataFrame, hplc: np.ndarray) -> None:
         pigment_idx = hplc_vars.index(pigment)
         hplc_i = hplc[:, pigment_idx]
         # diffD2.T: (n_wavelengths - 2, n_samples) -> (n_samples, n_wavelengths - 2)
-        coefficients, intercepts, summary_gofs, all_gofs = rrsModelTrain(diffD2.T, hplc_i, pft_index, n_permutations, max_pcs, k, mdl_pick_metric, seed=100)
+        coefficients, intercepts, summary_gofs, all_gofs = train_rrs_model(diffD2.T, hplc_i, pft_index, n_permutations, max_pcs, k, mdl_pick_metric, seed=100)
 
         a_filepath = output_dir / f"a_coefs_{pigment}.csv"
         c_filepath = output_dir / f"c_coefs_{pigment}.csv"

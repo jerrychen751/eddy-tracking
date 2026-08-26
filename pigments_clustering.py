@@ -1,8 +1,7 @@
 """
 Hierarchical clustering of diagnostic pigments from SDP output.
 
-Follows Kramer & Siegel (2019): compute pigment:TChla ratios, take the pairwise Pearson correlation matrix, convert to 1 - r distance, and run Ward's linkage.
-Produces a dendrogram, linkage matrix, and flat cluster assignments - intended to validate which PFT biomarkers co-vary in the dataset, informing F-matrix pruning or merging for PhytoClass.
+Follows Kramer & Siegel (2019): compute pigment:TChla ratios, take the pairwise Pearson correlation matrix, convert to 1 - r distance, and run Ward's linkage. Produces a dendrogram, linkage matrix, and flat cluster assignments - intended to validate which PFT biomarkers co-vary in the dataset, informing F-matrix pruning or merging for PhytoClass.
 
 Two modes:
   Default (pooled): all pixels from all eddies concatenated.
@@ -13,11 +12,13 @@ Two modes:
 
 import argparse
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 from scipy.spatial.distance import squareform
 
@@ -90,7 +91,7 @@ def clean_pigments(df: pd.DataFrame, pigment_cols: list[str]) -> pd.DataFrame:
     """Drop rows with T chla <= 0 or any non-finite pigment value."""
     # (n_rows, n_pigments) -> one flag per row (n_rows,)
     valid = (df["T chla"] > 0) & np.all(np.isfinite(df[pigment_cols].to_numpy()), axis=1)
-    return df[valid]
+    return df[valid]  # pyright: ignore[reportReturnType]
 
 
 def compute_pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
@@ -109,7 +110,7 @@ def compute_pooled_correlation(experiment: str) -> tuple[list[str], np.ndarray]:
     )
 
     ratios = df_clean[pigment_cols].div(df_clean["T chla"], axis=0)
-    corr = ratios.corr().values
+    corr = ratios.corr().values  # pyright: ignore[reportCallIssue]
     return pigment_cols, corr
 
 
@@ -138,7 +139,7 @@ def compute_per_eddy_mean_correlation(
             continue
 
         ratios = df_clean[pigment_cols].div(df_clean["T chla"], axis=0)
-        corr = ratios.corr().values
+        corr = ratios.corr().values  # pyright: ignore[reportCallIssue]
         if np.any(np.isnan(corr)):
             n_skipped += 1
             continue
@@ -178,12 +179,12 @@ def save_dendrogram(
 ) -> None:
     """Render and save a pigment dendrogram with PFT cluster labels."""
     labels = [DISPLAY_NAMES.get(p, p) for p in pigment_names]
-    fig, ax = plt.subplots(figsize=(10, 5.5), dpi=300)
+    fig, ax = cast("tuple[Figure, Axes]", plt.subplots(figsize=(10, 5.5), dpi=300))
     dendrogram(
         Z, labels=labels, ax=ax, leaf_rotation=45, leaf_font_size=9,
         color_threshold=color_threshold,
     )
-    ax.axhline(color_threshold, color="0.6", linestyle="--", linewidth=0.8)
+    ax.axhline(color_threshold, color="0.6", linestyle="--", linewidth=0.8)  # pyright: ignore[reportArgumentType]
     ax.set_title(title, fontsize=11, pad=10)
     ax.set_ylabel("1 - Pearson correlation", fontsize=10)
     ax.spines[["top", "right"]].set_visible(False)
@@ -191,16 +192,16 @@ def save_dendrogram(
 
     assignments = fcluster(Z, t=color_threshold, criterion="distance")
     display_to_pigment = {DISPLAY_NAMES.get(p, p): p for p in pigment_names}
-    tick_labels = [t.get_text() for t in ax.get_xticklabels()]
-    tick_positions = ax.get_xticks()
+    tick_labels = [t.get_text() for t in ax.get_xticklabels()]  # pyright: ignore[reportCallIssue]
+    tick_positions = ax.get_xticks()  # pyright: ignore[reportCallIssue]
 
     cluster_tick_xs: dict[int, list[float]] = {}
     cluster_members: dict[int, list[str]] = {}
     for xpos, leaf_label in zip(tick_positions, tick_labels):
         pigment = display_to_pigment.get(leaf_label, leaf_label)
-        cid = assignments[pigment_names.index(pigment)]
+        cid = assignments[pigment_names.index(pigment)]  # pyright: ignore[reportArgumentType]
         cluster_tick_xs.setdefault(cid, []).append(xpos)
-        cluster_members.setdefault(cid, []).append(pigment)
+        cluster_members.setdefault(cid, []).append(pigment)  # pyright: ignore[reportArgumentType]
 
     y_anno = ax.get_ylim()[1] * 1.02
     ax.set_ylim(top=ax.get_ylim()[1] * 1.18)
@@ -245,7 +246,7 @@ def save_cluster_table(
     for cid in sorted(set(assignments)):
         members = [p for p, c in zip(pigment_names, assignments) if c == cid]
         cluster_to_label[cid] = build_cluster_pft_label(members)
-    table["cluster_pft_group"] = table["cluster"].map(cluster_to_label)
+    table["cluster_pft_group"] = table["cluster"].map(cluster_to_label)  # pyright: ignore[reportArgumentType]
 
     table = table.sort_values(["cluster", "pigment"]).reset_index(drop=True)
     table.to_csv(out_path, index=False)
