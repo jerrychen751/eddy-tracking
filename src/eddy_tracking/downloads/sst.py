@@ -10,7 +10,7 @@ import earthaccess
 import xarray as xr
 from earthaccess import DataGranule
 
-from eddy_tracking.utils.authentication import (
+from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
     login_earthdata,
 )

@@ -13,7 +13,7 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt
 import xarray as xr
 
-from eddy_tracking.utils.authentication import login_aviso, load_aviso_credentials
+from eddy_tracking.downloads.auth import login_aviso, load_aviso_credentials
 
 
 # netCDF4/HDF5 serialization is not safe across downloader threads.
