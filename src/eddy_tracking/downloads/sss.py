@@ -25,9 +25,7 @@ def download_smap_sss_8d(
     """
     Download SMAP L3 8-day SSS through Harmony, one request per batch_days window, which keeps each request under the Harmony size limit.
 
-    Creates out_dir and raw_tmp, writes one NetCDF per granule into out_dir, and deletes raw_tmp on exit.
-    Sets the NUM_REQUESTS_WORKERS and DOWNLOAD_CHUNK_SIZE environment variables.
-    Returns (files_saved, failed_windows).
+    Creates out_dir and raw_tmp, writes one NetCDF per granule into out_dir, and deletes raw_tmp on exit. Sets the NUM_REQUESTS_WORKERS and DOWNLOAD_CHUNK_SIZE environment variables. Returns (files_saved, failed_windows).
     """
     import os as _os
 

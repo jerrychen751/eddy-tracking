@@ -38,9 +38,7 @@ def subset_to_bbox_ds(
     """
     Write the lon_range and lat_range subset of ds to output_path as NetCDF, through a ".tmp.nc" sibling renamed into place.
 
-    Handles both ascending and descending latitude coordinates.
-    Calls ``.load()`` before writing because a remote xarray dataset must be in memory before NetCDF serialization.
-    lon_range and lat_range are (low, high) in degrees east and degrees north.
+    Handles both ascending and descending latitude coordinates. Calls ``.load()`` before writing because a remote xarray dataset must be in memory before NetCDF serialization. lon_range and lat_range are (low, high) in degrees east and degrees north.
     """
     lat_name, lon_name = infer_lat_lon_names(ds)
     lat_vals = ds[lat_name].values
@@ -73,11 +71,7 @@ def download_aqua_sst_8d_4km(
     """
     Download AQUA MODIS 8-day 4km SST subsets through OPeNDAP.
 
-    Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule.
-    Skips files already in out_dir.
-    lon_range and lat_range are (low, high) in degrees east and degrees north.
-    A granule that fails is counted and the next one starts.
-    Returns (saved, errors).
+    Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule. Skips files already in out_dir. lon_range and lat_range are (low, high) in degrees east and degrees north. A granule that fails is counted and the next one starts. Returns (saved, errors).
     """
     print(
         "status: downloading_sst\n"

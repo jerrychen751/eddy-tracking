@@ -3,8 +3,7 @@ Download PACE OCI L3 mapped files.
 
 OB.DAAC OPenDAP provides server-side subsetting.
 
-The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto.
-Both use the same granule naming and the same OB.DAAC collection pattern, so one download path serves them.
+The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto. Both use the same granule naming and the same OB.DAAC collection pattern, so one download path serves them.
 """
 
 from __future__ import annotations
@@ -65,8 +64,7 @@ def _subset_and_save(
     """
     L3 latitude runs 90 to -90 (descending), so the lat slice goes high-to-low.
 
-    Drops 'palette' (visualization artifact).
-    Writes with zlib level 4 and atomic rename.
+    Drops 'palette' (visualization artifact). Writes with zlib level 4 and atomic rename.
     """
     subset = ds.sel(
         lat=slice(lat_range[1], lat_range[0]),
@@ -96,10 +94,7 @@ def download_pace_l3(
     """
     Search + download PACE L3 granules matching date_range, temporal_res, and product.
 
-    Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule.
-    Skips files already in out_dir.
-    lon_range and lat_range are (low, high) in degrees east and degrees north.
-    Returns (saved, skipped, errors).
+    Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule. Skips files already in out_dir. lon_range and lat_range are (low, high) in degrees east and degrees north. Returns (saved, skipped, errors).
     """
     login_earthdata()
     configure_obdaac_opendap_auth()
