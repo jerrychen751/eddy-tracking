@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import earthaccess
@@ -54,8 +55,12 @@ def subset_to_bbox_ds(
     subset = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
     subset.load()
     tmp_path = output_path.with_suffix(".tmp.nc")
-    subset.to_netcdf(tmp_path)
-    tmp_path.rename(output_path)
+    try:
+        subset.to_netcdf(tmp_path)
+        tmp_path.rename(output_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def download_aqua_sst_8d_4km(
@@ -64,14 +69,15 @@ def download_aqua_sst_8d_4km(
     lat_range: tuple[float, float],
     out_dir: Path,
     collection_id: str,
-) -> int:
+) -> tuple[int, int]:
     """
     Download AQUA MODIS 8-day 4km SST subsets through OPeNDAP.
 
     Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule.
     Skips files already in out_dir.
     lon_range and lat_range are (low, high) in degrees east and degrees north.
-    Returns the number of new files saved.
+    A granule that fails is counted and the next one starts.
+    Returns (saved, errors).
     """
     print(
         "status: downloading_sst\n"
@@ -88,7 +94,7 @@ def download_aqua_sst_8d_4km(
     print(f"cmr_granules: {len(granules)}")
 
     if not granules:
-        return 0
+        return 0, 0
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -107,10 +113,10 @@ def download_aqua_sst_8d_4km(
                 break
 
     if not matches:
-        return 0
+        return 0, 0
 
     opendap_base_url = "https://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI"
-    saved = 0
+    saved = errors = 0
     for filename, granule in sorted(matches, key=lambda match: match[0]):
         out_path = out_dir / filename
         opendap_url = next(
@@ -127,15 +133,24 @@ def download_aqua_sst_8d_4km(
             opendap_url = (
                 f"{opendap_base_url}/{start_date[:4]}/{start_date[4:8]}/{filename}"
             )
-        with open_obdaac_dataset(opendap_url) as ds:
-            subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
-        saved += 1
+        try:
+            with open_obdaac_dataset(opendap_url) as ds:
+                subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
+            saved += 1
+        except Exception as exc:
+            print(
+                "status: error\n"
+                f"file: {filename}\n"
+                f"error: {exc}",
+                file=sys.stderr,
+            )
+            errors += 1
 
-    return saved
+    return saved, errors
 
 
 def main(experiment: str | None = None) -> None:
-    """Download configured SST files."""
+    """Download configured SST files, exiting if any granule fails."""
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
@@ -144,17 +159,21 @@ def main(experiment: str | None = None) -> None:
     from utils.config import load_config, resolve_data_dir
 
     cfg = load_config(experiment)
-    n_saved = download_aqua_sst_8d_4km(
+    n_saved, n_errors = download_aqua_sst_8d_4km(
         date_range=tuple(cfg["base"]["time"]["rrs_date_range"]),
         lon_range=tuple(cfg["base"]["region"]["lon_range"]),
         lat_range=tuple(cfg["base"]["region"]["lat_range"]),
         out_dir=resolve_data_dir(cfg, "sst_dir"),
         collection_id=cfg["base"]["download"]["sst"]["collection_id"],
     )
+    status = "failed" if n_errors else "complete"
     print(
-        "status: complete\n"
-        f"sst_files_saved: {n_saved}"
+        f"status: {status}\n"
+        f"sst_files_saved: {n_saved}\n"
+        f"errors: {n_errors}"
     )
+    if n_errors:
+        raise SystemExit(f"{n_errors} granule(s) failed to download")
 
 
 if __name__ == "__main__":

@@ -77,8 +77,12 @@ def _subset_and_save(
     subset.load()
     tmp_path = out_path.with_suffix(".tmp.nc")
     encoding = {v: {"zlib": True, "complevel": 4} for v in subset.data_vars}
-    subset.to_netcdf(tmp_path, encoding=encoding)
-    tmp_path.rename(out_path)
+    try:
+        subset.to_netcdf(tmp_path, encoding=encoding)
+        tmp_path.rename(out_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def download_pace_l3(
