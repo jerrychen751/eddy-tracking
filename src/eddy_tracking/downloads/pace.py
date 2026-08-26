@@ -20,6 +20,7 @@ import xarray as xr
 from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
     login_earthdata,
+    open_obdaac_dataset,
 )
 
 
@@ -131,7 +132,7 @@ def download_pace_l3(
                 start = filename.split(".")[1]
                 opendap_url = f"{download_base_url}/{start[:4]}/{start[4:8]}/{filename}"
             # Subsetting over OPeNDAP transfers only the ROI hyperslab (~42 MB gzipped) instead of the full global granule (~2.3 GB).
-            with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
+            with open_obdaac_dataset(opendap_url) as ds:
                 _subset_and_save(ds, out_path, lon_range, lat_range)
             size_mb = out_path.stat().st_size / (1024 * 1024)
             print(

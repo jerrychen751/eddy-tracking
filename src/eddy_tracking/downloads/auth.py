@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from ftplib import FTP
 from pathlib import Path
@@ -11,6 +12,7 @@ import earthaccess
 from dotenv import load_dotenv
 
 if TYPE_CHECKING:
+    import xarray as xr
     from harmony import Client
 
 
@@ -36,6 +38,30 @@ def configure_obdaac_opendap_auth() -> None:
         "HTTP.DEFLATE=1\n"
     )
     os.environ["DAPRCFILE"] = str(rc_path)
+
+
+def open_obdaac_dataset(url: str) -> xr.Dataset:
+    """
+    Open one OB.DAAC OPeNDAP URL, and try again after a pause when the open fails. OB.DAAC throttles by client address and answers HTTP 429 with a body that netCDF4 reports as "NetCDF: Access failure", so a burst of requests, or two download stages against oceandata.sci.gsfc.nasa.gov at the same time, makes every open fail. The pause starts at 30 seconds and doubles over 4 attempts. Any other OSError, such as a 404 on a URL built from the granule filename, raises at once. xarray retries the later hyperslab read itself, through robust_getitem, so this covers the open only. The caller owns the returned dataset and must close it.
+    """
+    import xarray as xr
+
+    delay_seconds = 30
+    attempt = 1
+    while True:
+        try:
+            return xr.open_dataset(url, engine="netcdf4")
+        except OSError as exc:
+            if "Access failure" not in str(exc) or attempt == 4:
+                raise
+            print(
+                "status: throttled\n"
+                f"attempt: {attempt}\n"
+                f"retry_in_seconds: {delay_seconds}"
+            )
+            time.sleep(delay_seconds)
+            delay_seconds *= 2
+            attempt += 1
 
 
 def login_harmony() -> Client:

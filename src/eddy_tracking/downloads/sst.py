@@ -13,6 +13,7 @@ from earthaccess import DataGranule
 from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
     login_earthdata,
+    open_obdaac_dataset,
 )
 
 
@@ -126,7 +127,7 @@ def download_aqua_sst_8d_4km(
             opendap_url = (
                 f"{opendap_base_url}/{start_date[:4]}/{start_date[4:8]}/{filename}"
             )
-        with xr.open_dataset(opendap_url, engine="netcdf4") as ds:
+        with open_obdaac_dataset(opendap_url) as ds:
             subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
         saved += 1
 
