@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
+from typing import cast
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt
@@ -94,7 +95,7 @@ def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
     valid = np.logical_and.reduce(
         [np.isfinite(surface[field].to_numpy()) for field in swot_validity_fields]
     )
-    coast_ok = distance_transform_edt(valid) >= coast_min_distance_pixels
+    coast_ok = distance_transform_edt(valid) >= coast_min_distance_pixels  # pyright: ignore[reportOperatorIssue]
 
     longitude = surface["longitude"].to_numpy()
     latitude = surface["latitude"].to_numpy()
@@ -230,7 +231,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     failures = download_files(load_settings(experiment))
     if failures:

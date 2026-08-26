@@ -6,6 +6,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 import earthaccess
 import xarray as xr
@@ -148,7 +149,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     from utils.config import load_config, resolve_data_dir
 

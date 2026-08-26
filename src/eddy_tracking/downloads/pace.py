@@ -12,9 +12,11 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 import earthaccess
 import xarray as xr
+from earthaccess import DataGranule
 
 from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
@@ -27,7 +29,7 @@ def search_pace_l3_granules(
     date_range: tuple[str, str],
     temporal_res: str = "DAY",
     product: str = "AOP",
-) -> dict[str, tuple[str, object]]:
+) -> dict[str, tuple[str, DataGranule]]:
     """
     Search CMR for PACE L3 granules of one product in a date range and filter to matching temporal resolution and 4km.
 
@@ -44,7 +46,7 @@ def search_pace_l3_granules(
         temporal=(date_range[0], date_range[1]),
         count=5000,
     )
-    matches: dict[str, tuple[str, object]] = {}
+    matches: dict[str, tuple[str, DataGranule]] = {}
     for granule in results:
         for link in granule.data_links():
             filename = link.split("/")[-1]
@@ -157,7 +159,7 @@ def main(experiment: str | None = None) -> None:
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
-        experiment = parser.parse_args().experiment
+        experiment = cast(str, parser.parse_args().experiment)
 
     from utils.config import load_config, resolve_data_dir
 
