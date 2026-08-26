@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -22,15 +24,15 @@ def login_earthdata() -> earthaccess.Auth:
 
 
 def configure_obdaac_opendap_auth() -> None:
-    """Write a .dodsrc under the system temp dir and point the DAPRCFILE env var at it, so netCDF4 authenticates to OB.DAAC OPeNDAP from ~/.netrc."""
+    """Write a .dodsrc under the system temp dir and point the DAPRCFILE env var at it, so netCDF4 authenticates to OB.DAAC OPeNDAP from ~/.netrc. The directory is private to this process and goes away at exit, because libcurl rewrites the whole cookie jar at handle cleanup and run_pipeline runs the PACE and the SST download stages at the same time."""
     netrc_path = Path.home() / ".netrc"
     if not netrc_path.exists():
         raise FileNotFoundError(
             "~/.netrc with Earthdata Login credentials is required for OPeNDAP access"
         )
 
-    dap_dir = Path(tempfile.gettempdir()) / "obdaac_opendap"
-    dap_dir.mkdir(exist_ok=True)
+    dap_dir = Path(tempfile.mkdtemp(prefix="obdaac_opendap_"))
+    atexit.register(shutil.rmtree, dap_dir, True)
     rc_path = dap_dir / ".dodsrc"
     rc_path.write_text(
         f"HTTP.NETRC={netrc_path}\n"
