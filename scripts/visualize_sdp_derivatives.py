@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 def main() -> None:
     """Render the SDP derivative cascade and write it to visuals/sdp_derivative_cascade.png under the repo root."""
     repo_root = Path(__file__).resolve().parent.parent
-    experiment = "gulf_stream_20241001_20250701"
+    experiment = "gulf_stream_20240305_20260531"
     output_path = repo_root / "visuals" / "sdp_derivative_cascade.png"
 
     repo_path = str(repo_root)
