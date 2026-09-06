@@ -3,7 +3,7 @@ Download PACE OCI L3 mapped files.
 
 OB.DAAC OPenDAP provides server-side subsetting.
 
-The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto. Both use the same granule naming and the same OB.DAAC collection pattern, so one download path serves them.
+The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto. Both use the same granule naming, so one download path serves them, and the experiment config names the CMR collection id of each.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import cast
 
 import earthaccess
@@ -27,22 +28,24 @@ from eddy_tracking.downloads.auth import (
 
 def search_pace_l3_granules(
     date_range: tuple[str, str],
+    collection_id: str,
+    version: str,
     temporal_res: str = "DAY",
     product: str = "AOP",
 ) -> dict[str, tuple[str, DataGranule]]:
     """
-    Search CMR for PACE L3 granules of one product in a date range and filter to matching temporal resolution and 4km.
+    Search CMR for the granules of one PACE L3 collection in a date range and keep those whose filename carries the requested temporal resolution, product, version, and the 4km grid.
 
-    Returns {date_key: (filename, granule)}, where date_key is the granule start date "20240929" and filename is "PACE_OCI.20240929_20241006.L3m.8D.BGC.V3_2.4km.nc".
+    Returns {date_key: (filename, granule)}, where date_key is the granule start date "20240929" and filename is "PACE_OCI.20240929_20241006.L3m.8D.BGC.V3_2.4km.nc". A granule from another reprocessing fails the match, so one directory never holds two versions of the same date.
     """
-    # The version segment stays open so a new reprocessing does not break the match.
+    # The version segment is pinned, so a new reprocessing fails the match instead of mixing two versions in one directory.
     granule_pattern = {
-        "DAY": r"PACE_OCI\.(\d{{8}})\.L3m\.DAY\.{product}\..*\.4km\.nc",
-        "8D": r"PACE_OCI\.(\d{{8}})_(\d{{8}})\.L3m\.8D\.{product}\..*\.4km\.nc",
+        "DAY": r"PACE_OCI\.(\d{{8}})\.L3m\.DAY\.{product}\.{version}\.4km\.nc",
+        "8D": r"PACE_OCI\.(\d{{8}})_(\d{{8}})\.L3m\.8D\.{product}\.{version}\.4km\.nc",
     }[temporal_res]
-    regex = re.compile(granule_pattern.format(product=product))
+    regex = re.compile(granule_pattern.format(product=product, version=re.escape(version)))
     results = earthaccess.search_data(
-        short_name=f"PACE_OCI_L3M_{product}",
+        concept_id=collection_id,
         temporal=(date_range[0], date_range[1]),
         count=5000,
     )
@@ -90,11 +93,13 @@ def download_pace_l3(
     lon_range: tuple[float, float],
     lat_range: tuple[float, float],
     out_dir: Path,
+    collection_id: str,
+    version: str,
     temporal_res: str = "DAY",
     product: str = "AOP",
 ) -> tuple[int, int, int]:
     """
-    Search + download PACE L3 granules matching date_range, temporal_res, and product.
+    Search + download the granules of one PACE L3 collection matching date_range, temporal_res, product, and version.
 
     Creates out_dir and writes one region subset NetCDF per granule into it, named after the source granule. Skips files already in out_dir. lon_range and lat_range are (low, high) in degrees east and degrees north. Returns (saved, skipped, errors).
     """
@@ -104,15 +109,18 @@ def download_pace_l3(
     out_dir.mkdir(parents=True, exist_ok=True)
     download_base_url = "https://oceandata.sci.gsfc.nasa.gov/opendap/PACE_OCI/L3SMI"
 
-    matches = search_pace_l3_granules(date_range, temporal_res, product)
+    matches = search_pace_l3_granules(date_range, collection_id, version, temporal_res, product)
     print(
         f"matched_granules: {len(matches)}\n"
+        f"collection_id: {collection_id}\n"
         f"temporal_resolution: {temporal_res}\n"
         f"product: {product}\n"
+        f"version: {version}\n"
         "spatial_resolution_km: 4"
     )
 
     saved = skipped = errors = 0
+    use_remote_subset = True
     for date_key, (filename, granule) in sorted(matches.items()):
         out_path = out_dir / filename
         if out_path.exists():
@@ -133,8 +141,25 @@ def download_pace_l3(
                 start = filename.split(".")[1]
                 opendap_url = f"{download_base_url}/{start[:4]}/{start[4:8]}/{filename}"
             # Subsetting over OPeNDAP transfers only the ROI hyperslab (~42 MB gzipped) instead of the full global granule (~2.3 GB).
-            with open_obdaac_dataset(opendap_url) as ds:
-                _subset_and_save(ds, out_path, lon_range, lat_range)
+            if use_remote_subset:
+                try:
+                    with open_obdaac_dataset(opendap_url) as ds:
+                        _subset_and_save(ds, out_path, lon_range, lat_range)
+                except OSError:
+                    use_remote_subset = False
+            if not use_remote_subset:
+                print(
+                    "status: downloading_global_fallback\n"
+                    f"file: {filename}"
+                )
+                with TemporaryDirectory(prefix="pace-global-") as temporary_dir:
+                    [downloaded_path] = earthaccess.download(
+                        [granule],
+                        local_path=temporary_dir,
+                        threads=1,
+                    )
+                    with xr.open_dataset(downloaded_path) as ds:
+                        _subset_and_save(ds, out_path, lon_range, lat_range)
             size_mb = out_path.stat().st_size / (1024 * 1024)
             print(
                 "status: saved\n"
@@ -155,7 +180,7 @@ def download_pace_l3(
 
 
 def main(experiment: str | None = None) -> None:
-    """Download and save PACE files, exiting if any date fails."""
+    """Download and save the AOP and BGC PACE files of an experiment, exiting if any date fails."""
     if experiment is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
@@ -167,17 +192,24 @@ def main(experiment: str | None = None) -> None:
     longitude_range = tuple(cfg["base"]["region"]["lon_range"])
     latitude_range = tuple(cfg["base"]["region"]["lat_range"])
     date_range = tuple(cfg["base"]["time"]["rrs_date_range"])
-    temporal_resolution = cfg["base"]["download"]["pace"].get(
-        "temporal_resolution", "DAY"
-    )
+    pace_cfg = cfg["base"]["download"]["pace"]
+    temporal_resolution = pace_cfg.get("temporal_resolution", "DAY")
 
-    n_saved, n_skipped, n_errors = download_pace_l3(
-        date_range=date_range,
-        lon_range=longitude_range,
-        lat_range=latitude_range,
-        out_dir=resolve_data_dir(cfg, "pace_dir"),
-        temporal_res=temporal_resolution,
-    )
+    n_saved = n_skipped = n_errors = 0
+    for product, data_key in (("AOP", "pace_dir"), ("BGC", "pace_bgc_dir")):
+        saved, skipped, errors = download_pace_l3(
+            date_range=date_range,
+            lon_range=longitude_range,
+            lat_range=latitude_range,
+            out_dir=resolve_data_dir(cfg, data_key),
+            collection_id=pace_cfg["collection_ids"][product],
+            version=pace_cfg["version"],
+            temporal_res=temporal_resolution,
+            product=product,
+        )
+        n_saved += saved
+        n_skipped += skipped
+        n_errors += errors
 
     print(
         "status: download_finished\n"

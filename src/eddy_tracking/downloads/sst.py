@@ -6,6 +6,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import cast
 
 import earthaccess
@@ -112,6 +113,7 @@ def download_aqua_sst_8d_4km(
 
     opendap_base_url = "https://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI"
     saved = errors = 0
+    use_remote_subset = True
     for filename, granule in sorted(matches, key=lambda match: match[0]):
         out_path = out_dir / filename
         opendap_url = next(
@@ -129,8 +131,25 @@ def download_aqua_sst_8d_4km(
                 f"{opendap_base_url}/{start_date[:4]}/{start_date[4:8]}/{filename}"
             )
         try:
-            with open_obdaac_dataset(opendap_url) as ds:
-                subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
+            if use_remote_subset:
+                try:
+                    with open_obdaac_dataset(opendap_url) as ds:
+                        subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
+                except OSError:
+                    use_remote_subset = False
+            if not use_remote_subset:
+                print(
+                    "status: downloading_global_fallback\n"
+                    f"file: {filename}"
+                )
+                with TemporaryDirectory(prefix="sst-global-") as temporary_dir:
+                    [downloaded_path] = earthaccess.download(
+                        [granule],
+                        local_path=temporary_dir,
+                        threads=1,
+                    )
+                    with xr.open_dataset(downloaded_path) as ds:
+                        subset_to_bbox_ds(ds, out_path, lon_range, lat_range)
             saved += 1
         except Exception as exc:
             print(
