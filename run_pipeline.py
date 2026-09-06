@@ -24,11 +24,13 @@ DEFAULT_STAGES = [
     "download_swot",
     "download_pace",
     "download_sst_sss",
+    "download_cmems",
     "eddy_id",
     "eddy_track",
     "collocate_pace",
     "run_sdp",
     "gulf_stream",
+    "collocate_plankton",
     "eddy_dynamics",
     "background",
     "build_gold_table",
@@ -38,7 +40,7 @@ DEFAULT_STAGES = [
 VALID_STAGES = DEFAULT_STAGES.copy()
 VALID_STAGES.insert(VALID_STAGES.index("gulf_stream") + 1, "collocate_chlorophyll")
 
-PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
+PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss", "download_cmems"}
 
 
 def _log_stage(action: str, stage: str) -> None:
@@ -61,6 +63,7 @@ def _run_stage(experiment: str, stage: str) -> None:
             "eddy_tracking.downloads.sst",
             "eddy_tracking.downloads.sss",
         ),
+        "download_cmems": ("eddy_tracking.downloads.cmems",),
     }
     modules = stage_modules.get(stage)
     if modules is not None:

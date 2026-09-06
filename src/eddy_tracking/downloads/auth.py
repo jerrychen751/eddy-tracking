@@ -98,3 +98,15 @@ def load_aviso_credentials() -> AvisoCredentials:
 
 def login_aviso(host: str, user: str, password: str) -> FTP:
     return FTP(host, user, password)
+
+
+def load_cmems_credentials() -> tuple[str, str]:
+    """Return the Copernicus Marine (username, password) pair from COPERNICUS_USERNAME and COPERNICUS_PASSWORD, read from .env or the environment."""
+    load_dotenv()
+    for variable_name in ("COPERNICUS_USERNAME", "COPERNICUS_PASSWORD"):
+        if not os.environ.get(variable_name):
+            raise SystemExit(
+                f"Missing required env var: {variable_name} "
+                "(set in .env or environment)"
+            )
+    return os.environ["COPERNICUS_USERNAME"], os.environ["COPERNICUS_PASSWORD"]

@@ -33,6 +33,7 @@ bash slurm/submit_pipeline.sh gulf_stream_20240305_20260531 --from eddy_track
 | `download_swot` | 4 | 8 GB | 6 h | I/O-bound; FTP parallel downloads |
 | `download_pace` | 4 | 16 GB | 12 h | I/O-bound; HTTPS via earthaccess |
 | `download_sst_sss` | 4 | 8 GB | 6 h | Harmony API + earthaccess |
+| `download_cmems` | 2 | 8 GB | 8 h | I/O-bound; Copernicus Marine toolbox, about 90 s per month |
 | `eddy_id` | 12 | 32 GB | 6 h | CPU-bound; ProcessPoolExecutor |
 | `eddy_track` | 4 | 16 GB | 2 h | Single-threaded PET tracking |
 | `collocate_pace` | 4 | 32 GB | 4 h | Per-date spatial join |
@@ -43,10 +44,11 @@ bash slurm/submit_pipeline.sh gulf_stream_20240305_20260531 --from eddy_track
 ```
 download_swot ─┐
 download_pace ─┼─→ eddy_id → eddy_track → collocate_pace → run_sdp
-download_sst_sss ┘
+download_sst_sss ┤
+download_cmems ┘
 ```
 
-The three download stages have no mutual dependency and run simultaneously. The `EXPERIMENT` variable is passed via `--export=ALL,EXPERIMENT=<name>` and validated inside each script with `: "${EXPERIMENT:?...}"`.
+The four download stages have no mutual dependency and run simultaneously. The `EXPERIMENT` variable is passed via `--export=ALL,EXPERIMENT=<name>` and validated inside each script with `: "${EXPERIMENT:?...}"`.
 
 ## Monitoring
 
