@@ -36,6 +36,7 @@ DEFAULT_STAGES = [
 
 # Canonical run order used for explicit stage lists too.
 VALID_STAGES = DEFAULT_STAGES.copy()
+VALID_STAGES.insert(VALID_STAGES.index("gulf_stream") + 1, "collocate_chlorophyll")
 
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
 
@@ -142,8 +143,11 @@ def resolve_stages(
                 file=sys.stderr,
             )
             sys.exit(1)
-        start_idx = DEFAULT_STAGES.index(from_stage)
-        return DEFAULT_STAGES[start_idx:]
+        start_idx = VALID_STAGES.index(from_stage)
+        return [
+            stage for stage in VALID_STAGES[start_idx:]
+            if stage in DEFAULT_STAGES or stage == from_stage
+        ]
 
     if not args_stages:
         return list(DEFAULT_STAGES)

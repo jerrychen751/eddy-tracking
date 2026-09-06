@@ -5,7 +5,7 @@ The axis is an ordered streamline traced through the fastest Gulf Stream core fl
 
 Outputs to silver/gulf_stream/:
   - streamline.parquet holds one row per ordered centerline point: date, point_idx, lon, lat
-  - eddy_movement.parquet holds one row per (polarity, track_id): movement class + sides
+  - eddy_movement.parquet holds one row per (polarity, track_id): movement class, sides, and signed axis distances in km
 """
 
 import argparse
@@ -241,6 +241,14 @@ def load_track_observations(
         zarr_path = track_dir / f"{track_dir.name}_tracks.zarr"
         tracked = TrackEddiesObservations.load_file(str(zarr_path))
         keep = ~tracked.virtual.astype(bool)
+        longitudes = tracked.longitude[keep]
+        latitudes = tracked.latitude[keep]
+        if not (
+            np.isfinite(longitudes).all()
+            and np.isfinite(latitudes).all()
+            and ((latitudes >= -90) & (latitudes <= 90)).all()
+        ):
+            raise ValueError(f"Invalid physical center coordinates in {zarr_path}")
         days = [pet_epoch + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
         frames.append(pd.DataFrame({
             "polarity": polarity,
@@ -249,7 +257,15 @@ def load_track_observations(
             "center_lon": (tracked.longitude[keep] + 180) % 360 - 180,
             "center_lat": tracked.latitude[keep],
         }))
-    return pd.concat(frames, ignore_index=True)
+    observations = pd.concat(frames, ignore_index=True)
+    if observations.empty:
+        raise ValueError("Track files contain no physical observations")
+    if observations.duplicated(["polarity", "track_id", "date"]).any():
+        raise ValueError("Track files contain duplicate physical track dates")
+    physical_dates = observations.groupby(["polarity", "track_id"])["date"]
+    if (cast(pd.Series, physical_dates.max()) <= cast(pd.Series, physical_dates.min())).any():
+        raise ValueError("Physical track lifetimes must exceed zero days")
+    return observations
 
 
 def main(experiment: str | None = None) -> None:
@@ -298,8 +314,8 @@ def main(experiment: str | None = None) -> None:
     for (polarity, track_id), grp in obs.groupby(["polarity", "track_id"]):  # pyright: ignore[reportGeneralTypeIssues]
         grp = grp.sort_values("date")
         birth, death = grp.iloc[0], grp.iloc[-1]
-        _, birth_side = _classify_streamline_side(centerline_by_date, birth)
-        _, death_side = _classify_streamline_side(centerline_by_date, death)
+        birth_distance_km, birth_side = _classify_streamline_side(centerline_by_date, birth)
+        death_distance_km, death_side = _classify_streamline_side(centerline_by_date, death)
         movement_rows.append({
             "polarity": polarity,
             "track_id": track_id,
@@ -307,6 +323,8 @@ def main(experiment: str | None = None) -> None:
             "death_date": death["date"],
             "birth_side": birth_side,
             "death_side": death_side,
+            "birth_distance_km": birth_distance_km,
+            "death_distance_km": death_distance_km,
             "movement": (birth_side + death_side) if birth_side and death_side else "",
         })
     movement_df = pd.DataFrame(movement_rows)
