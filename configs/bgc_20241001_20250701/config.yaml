@@ -60,13 +60,3 @@ collocate_pace:
 
   # Restrict to specific track IDs (omit to process all)
   # track_ids: [5, 12, 20]
-
-phytoclass:
-  seed: 42
-  cluster_threshold: 0.65
-  min_cluster_size: 30
-  n_iter: 500
-  n_neighbors: 120
-  max_workers: 12  # parallel workers for per-eddy SA; set to 1 for debugging
-  f_matrix: f_matrix.csv  # relative to this config dir
-  min_max: min_max.csv

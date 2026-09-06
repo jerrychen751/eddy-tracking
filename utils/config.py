@@ -8,7 +8,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Column order is positional: it must match the np.column_stack order in collocate_pace.py and the enumerate-insert loops in run_sdp.py and run_phytoclass.py.
+# Column order is positional: it must match the np.column_stack order in collocate_pace.py and the enumerate-insert loop in run_sdp.py.
 METADATA_COLS: list[str] = [
     "track_id", "date", "pixel_lon", "pixel_lat",
     "center_lon", "center_lat", "coverage",
@@ -64,9 +64,3 @@ def load_config(experiment: str) -> dict[str, Any]:
         raise FileNotFoundError(f"Experiment config not found: {config_path}")
     with config_path.open(encoding="utf-8") as config_file:
         return yaml.safe_load(config_file)
-
-
-def resolve_config_file(experiment: str, relative_path: str) -> Path:
-    """Return a config-relative path without creating or validating the file."""
-    _validate_experiment(experiment)
-    return PROJECT_ROOT / "configs" / experiment / relative_path

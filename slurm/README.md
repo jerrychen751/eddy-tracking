@@ -1,6 +1,6 @@
 # Slurm job scripts
 
-HPC Slurm job scripts for running the older core/PFT branch of the
+HPC Slurm job scripts for running the pigment branch of the
 eddy-tracking pipeline on PACE Phoenix. The local `run_pipeline.py` now runs
 the full gold-table path; these Slurm scripts do not yet submit `gulf_stream`,
 `eddy_dynamics`, `background`, or `build_gold_table`.
@@ -17,14 +17,14 @@ All jobs use `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
 ## How to submit
 
 ```bash
-# Submit the core/PFT branch for an experiment
+# Submit the pigment branch for an experiment
 EXPERIMENT=gulf_stream_20241001_20250701 bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701
 
 # Resume from a specific stage (e.g., if eddy_id already ran)
 bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701 --from eddy_track
 ```
 
-`submit_pipeline.sh` submits download stages in parallel (no mutual dependencies), then chains all subsequent core/PFT stages with `--dependency=afterok` so each stage only starts after the previous one succeeds.
+`submit_pipeline.sh` submits download stages in parallel (no mutual dependencies), then chains all subsequent pigment stages with `--dependency=afterok` so each stage only starts after the previous one succeeds.
 
 ## Stage resource summary
 
@@ -37,13 +37,12 @@ bash slurm/submit_pipeline.sh gulf_stream_20241001_20250701 --from eddy_track
 | `eddy_track` | 4 | 16 GB | 2 h | Single-threaded PET tracking |
 | `collocate_pace` | 4 | 32 GB | 4 h | Per-date spatial join |
 | `run_sdp` | 8 | 32 GB | 12 h | GSM inversion + pigment ensemble |
-| `run_phytoclass` | 12 | 64 GB | 12 h | SA per eddy; per-cluster parallelism |
 
 ## Job dependency chain
 
 ```
 download_swot ─┐
-download_pace ─┼─→ eddy_id → eddy_track → collocate_pace → run_sdp → run_phytoclass
+download_pace ─┼─→ eddy_id → eddy_track → collocate_pace → run_sdp
 download_sst_sss ┘
 ```
 
@@ -59,5 +58,5 @@ tail -f logs/<stage>_<jobid>.log
 ## Troubleshooting
 
 - **Job stuck in `PD (dependency)`**: a parent job failed. Check `squeue --jobs <parent_jid>` and the parent's log.
-- **OOM kill**: increase `--mem` in the relevant `.sbatch`. `run_phytoclass` is the heaviest (64 GB with 100+ large eddies).
+- **OOM kill**: increase `--mem` in the relevant `.sbatch`.
 - **earthaccess auth failure**: ensure `~/.netrc` is configured on the compute node (earthaccess writes credentials there after first login).

@@ -7,7 +7,6 @@ Usage:
     python run_pipeline.py <experiment> # gold-table stages
     python run_pipeline.py <experiment> stage1 stage2 ... # specific stages
     python run_pipeline.py <experiment> --from <stage> # from stage onward
-    python run_pipeline.py <experiment> run_phytoclass # optional PFT branch
 """
 
 import argparse
@@ -35,13 +34,8 @@ DEFAULT_STAGES = [
     "build_gold_table",
 ]
 
-# Optional branch products that are not joined into the current gold table.
-OPTIONAL_STAGES = [
-    "run_phytoclass",
-]
-
 # Canonical run order used for explicit stage lists too.
-VALID_STAGES = DEFAULT_STAGES + OPTIONAL_STAGES
+VALID_STAGES = DEFAULT_STAGES.copy()
 
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss"}
 
@@ -148,10 +142,8 @@ def resolve_stages(
                 file=sys.stderr,
             )
             sys.exit(1)
-        if from_stage in DEFAULT_STAGES:
-            start_idx = DEFAULT_STAGES.index(from_stage)
-            return DEFAULT_STAGES[start_idx:]
-        return [from_stage]
+        start_idx = DEFAULT_STAGES.index(from_stage)
+        return DEFAULT_STAGES[start_idx:]
 
     if not args_stages:
         return list(DEFAULT_STAGES)

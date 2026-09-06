@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "eddy-tracking"
 version = "0.1.0"
-description = "Mesoscale eddy tracking in the Gulf Stream with PACE OCI pigment and PFT collocation."
+description = "Mesoscale eddy tracking in the Gulf Stream with PACE OCI pigment collocation."
 requires-python = ">=3.10,<3.11"
 dependencies = [
     "numpy==1.26.4", # <2 keeps numba 0.63 compatible

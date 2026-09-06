@@ -1,13 +1,13 @@
 """
 Hierarchical clustering of diagnostic pigments from SDP output.
 
-Follows Kramer & Siegel (2019): compute pigment:TChla ratios, take the pairwise Pearson correlation matrix, convert to 1 - r distance, and run Ward's linkage. Produces a dendrogram, linkage matrix, and flat cluster assignments - intended to validate which PFT biomarkers co-vary in the dataset, informing F-matrix pruning or merging for PhytoClass.
+Follows Kramer & Siegel (2019): compute pigment:TChla ratios, take the pairwise Pearson correlation matrix, convert to 1 - r distance, and run Ward's linkage. Produces a dendrogram, linkage matrix, and flat cluster assignments to examine pigment covariance in the dataset.
 
 Two modes:
   Default (pooled): all pixels from all eddies concatenated.
   The resulting correlations are dominated by between-eddy regime shifts (biomass, season, water type) and lose fine-grained within-eddy PFT structure.
   --per-eddy: compute a 12x12 correlation matrix per eddy independently, then average across eddies.
-  Isolates within-eddy PFT covariance, which matches the scope of PhytoClass (it runs per-eddy too).
+  Isolates within-eddy pigment covariance.
 """
 
 import argparse
@@ -275,7 +275,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--per-eddy", action="store_true",
-        help="Compute correlation per eddy and average (matches PhytoClass scope)",
+        help="Compute correlation per eddy and average across eddies",
     )
     parser.add_argument(
         "--min-pixels", type=int, default=50,

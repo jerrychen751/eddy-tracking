@@ -34,7 +34,7 @@ done
 
 if [[ -z "$EXPERIMENT" ]]; then
     echo "Usage: $0 <experiment> [--from <stage>]"
-    echo "Stages: download_swot download_pace download_sst_sss eddy_id eddy_track collocate_pace run_sdp run_phytoclass"
+    echo "Stages: download_swot download_pace download_sst_sss eddy_id eddy_track collocate_pace run_sdp"
     exit 1
 fi
 
@@ -48,7 +48,7 @@ fi
 mkdir -p "$PROJECT_DIR/logs"
 
 # Ordered stages - downloads run sequentially first, then compute
-ALL_STAGES=(download_swot download_pace download_sst_sss eddy_id eddy_track collocate_pace run_sdp run_phytoclass)
+ALL_STAGES=(download_swot download_pace download_sst_sss eddy_id eddy_track collocate_pace run_sdp)
 
 # Determine which stages to run
 STAGES=()
