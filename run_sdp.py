@@ -5,6 +5,7 @@ For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS, r
 """
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import cast
 
@@ -109,6 +110,21 @@ def process_eddy(
     return True
 
 
+def load_worker_ancillary(sst_dir: Path, sss_dir: Path) -> None:
+    """Load the ancillary grids once in each SDP worker process."""
+    global _worker_ancillary
+    _worker_ancillary = (
+        read_multiple_sst(sorted(sst_dir.glob("*.nc"))),
+        read_multiple_sss(sorted(sss_dir.glob("*.nc4"))),
+    )
+
+
+def process_eddy_in_worker(rrs_path: Path, out_path: Path) -> bool:
+    """Process one eddy after load_worker_ancillary initializes this process."""
+    sst_df, sss_df = _worker_ancillary
+    return process_eddy(rrs_path, out_path, sst_df, sss_df)
+
+
 def main(experiment: str | None = None) -> None:
     """Process all collocated eddies and write missing pigment Parquet files."""
     if experiment is None:
@@ -119,12 +135,9 @@ def main(experiment: str | None = None) -> None:
     cfg = load_config(experiment)
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
+    max_workers = cfg.get("run_sdp", {}).get("max_workers", 1)
 
-    print("status: loading_sst_sss_grids")
-    sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
-    sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
-
-    n_written = 0
+    tasks: list[tuple[Path, Path]] = []
     for polarity in ("cyclone", "anticyclone"):
         rrs_dir = resolve_output_dir(experiment, "collocate_pace", polarity)
         out_dir = resolve_output_dir(experiment, "pigments", polarity)
@@ -148,8 +161,29 @@ def main(experiment: str | None = None) -> None:
             out_path = out_dir / rrs_path.name.replace(
                 "_rrs.parquet", "_pigments.parquet"
             )
+            tasks.append((rrs_path, out_path))
+
+    print("status: loading_sst_sss_grids")
+    n_written = 0
+    if max_workers == 1:
+        sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
+        sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
+        for rrs_path, out_path in tasks:
             if process_eddy(rrs_path, out_path, sst_df, sss_df):
                 n_written += 1
+    else:
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            initializer=load_worker_ancillary,
+            initargs=(sst_dir, sss_dir),
+        ) as executor:
+            futures = [
+                executor.submit(process_eddy_in_worker, rrs_path, out_path)
+                for rrs_path, out_path in tasks
+            ]
+            for future in as_completed(futures):
+                if future.result():
+                    n_written += 1
 
     print(
         "status: complete\n"
