@@ -11,12 +11,16 @@ from typing import cast
 import numpy as np
 import pandas as pd
 import xarray as xr
-from matplotlib.path import Path as PolygonPath
 
-from collocate_pace import EddyObs, build_date_eddy_index, collect_eddies_for_window
-from eddy_tracking.packages.py_eddy_tracker.observations.tracking import TrackEddiesObservations
-from gulf_stream import load_track_observations
 from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_output_dir
+from eddy_tracking.preprocess.tracks import (
+    EddyObs,
+    build_date_eddy_index,
+    collect_eddies_for_window,
+    load_track_observations,
+    load_tracks,
+    mask_pixels_inside_contour,
+)
 
 
 def collect_chlorophyll_files(
@@ -122,16 +126,14 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
     data_dir = PROJECT_ROOT / "data" / experiment
     pace_dir = PROJECT_ROOT / cfg["base"]["data"]["root"] / cfg["base"]["dataset"] / "bronze" / cfg["base"]["data"]["pace_bgc_dir"]
     files = collect_chlorophyll_files(pace_dir, date_range)
-    track_dir = data_dir / "silver/eddy_track"
-    observations = load_track_observations(track_dir / "cyclone", track_dir / "anticyclone")
+    observations = load_track_observations(experiment)
     movement = read_movement_table(data_dir / "silver/gulf_stream/eddy_movement.parquet", observations)
     configured_ids = collocation_cfg.get("track_ids")
     selected_ids = set(configured_ids) if configured_ids else None
     date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
     for polarity in ("cyclone", "anticyclone"):
-        tracked = TrackEddiesObservations.load_file(str(track_dir / polarity / f"{polarity}_tracks.zarr"))
         polarity_index = build_date_eddy_index(
-            tracked, polarity, selected_ids, collocation_cfg.get("region"), date_range,
+            load_tracks(experiment, polarity), polarity, selected_ids, collocation_cfg.get("region"), date_range,
         )
         for day, eddies in polarity_index.items():
             date_index[day].extend(eddies)
@@ -152,13 +154,11 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
                 & (field["lat"] >= eddy.contour_lat.min())
                 & (field["lat"] <= eddy.contour_lat.max()), drop=True,
             )
-            lon_grid, lat_grid = np.meshgrid(interior["lon"].to_numpy(), interior["lat"].to_numpy())
-            polygon = PolygonPath(np.column_stack([eddy.contour_lon, eddy.contour_lat]))
-            inside = polygon.contains_points(np.column_stack([lon_grid.ravel(), lat_grid.ravel()]))
+            inside = mask_pixels_inside_contour(interior["lon"].to_numpy(), interior["lat"].to_numpy(), eddy.contour_lon, eddy.contour_lat)
             n_inside = int(inside.sum())
             if n_inside == 0:
                 continue
-            values = interior.to_numpy().ravel()[inside]
+            values = interior.to_numpy()[inside]
             valid_values = values[np.isfinite(values) & (values > 0)]
             coverage = len(valid_values) / n_inside
             if coverage < min_coverage or len(valid_values) < min_pixels:

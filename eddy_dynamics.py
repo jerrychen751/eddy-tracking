@@ -6,59 +6,16 @@ The DUACS/MIOST source variable is named relative_vorticity, but in the files us
 
 import argparse
 import datetime as dt
-import re
 from pathlib import Path
 from typing import cast
 
 import numpy as np
 import pandas as pd
-from matplotlib.path import Path as MplPath
 from scipy.interpolate import RegularGridInterpolator
 
 from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
-from eddy_tracking.utils.subset import load_rossby_field
-
-
-def find_nearest_swot_file(files: dict[dt.date, Path], target: dt.date) -> Path | None:
-    """SWOT file on target, else the closest within 4 days, else None."""
-    swot_search_days = 4
-    for delta in range(swot_search_days + 1):
-        for day in (target - dt.timedelta(delta), target + dt.timedelta(delta)):
-            if day in files:
-                return files[day]
-    return None
-
-
-def track_observations_to_frame(tracked, polarity: str) -> pd.DataFrame:
-    """Non-virtual observations from one py-eddy-tracker object."""
-    pet_epoch = dt.date(1950, 1, 1)
-    keep = ~tracked.virtual.astype(bool)
-    days = [pet_epoch + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
-    contour_lon = (tracked.contour_lon_s[keep] + 180) % 360 - 180
-    contour_lat = tracked.contour_lat_s[keep]
-    return pd.DataFrame({
-        "polarity": polarity,
-        "track_id": tracked.track[keep].astype(int),
-        "date": pd.to_datetime(days),
-        "center_lon": (tracked.longitude[keep] + 180) % 360 - 180,
-        "center_lat": tracked.latitude[keep],
-        "contour_lon": list(contour_lon),
-        "contour_lat": list(contour_lat),
-    })
-
-
-def load_track_observations(experiment: str) -> pd.DataFrame:
-    """Load non-virtual track observations for both polarities."""
-    from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
-        TrackEddiesObservations,
-    )
-
-    frames = []
-    for polarity in ("cyclone", "anticyclone"):
-        track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
-        tracked = TrackEddiesObservations.load_file(str(track_dir / f"{polarity}_tracks.zarr"))
-        frames.append(track_observations_to_frame(tracked, polarity))
-    return pd.concat(frames, ignore_index=True)
+from eddy_tracking.preprocess.swot import find_nearest_swot_file, index_swot_files_by_date, load_rossby_field
+from eddy_tracking.preprocess.tracks import load_track_observations, mask_pixels_inside_contour
 
 
 def compute_rossby_stats(
@@ -74,10 +31,8 @@ def compute_rossby_stats(
     interp = RegularGridInterpolator((lat, lon), rossby_number, bounds_error=False, fill_value=np.nan)
     center = float(interp([[center_lat, center_lon]])[0])
 
-    lon2d, lat2d = np.meshgrid(lon, lat)  # (n_lon,) + (n_lat,) -> (n_lat, n_lon) each
-    points = np.column_stack([lon2d.ravel(), lat2d.ravel()])  # (n_lat, n_lon) each -> (n_lat*n_lon,) each -> (n_lat*n_lon, 2)
-    inside = MplPath(np.column_stack([contour_lon, contour_lat])).contains_points(points)  # contour (n_vertices,) + (n_vertices,) -> (n_vertices, 2)
-    values = rossby_number.ravel()[inside]  # (n_lat, n_lon) -> (n_lat*n_lon,) -> (n_inside,)
+    inside = mask_pixels_inside_contour(lon, lat, contour_lon, contour_lat)
+    values = rossby_number[inside]  # (n_lat, n_lon) -> (n_inside,)
     values = values[np.isfinite(values)]
 
     if values.size == 0:
@@ -163,11 +118,7 @@ def main(experiment: str | None = None) -> None:
         experiment = cast(str, args.experiment)
 
     cfg = load_config(experiment)
-    swot_date_re = re.compile(r"\d{8}")
-    swot_files = {
-        dt.datetime.strptime(swot_date_re.search(fp.name).group(), "%Y%m%d").date(): fp  # pyright: ignore[reportOptionalMemberAccess]
-        for fp in sorted(resolve_data_dir(cfg, "swot_dir").glob("*.nc"))
-    }
+    swot_files = index_swot_files_by_date(resolve_data_dir(cfg, "swot_dir"))
     obs = load_track_observations(experiment)
     print(
         "status: computing_rossby_diagnostics\n"

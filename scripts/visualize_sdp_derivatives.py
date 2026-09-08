@@ -16,8 +16,7 @@ from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_d
 from eddy_tracking.packages.sdp.ancillary import sample_ancillary
 from eddy_tracking.packages.sdp.physics import get_rrs_residuals
 from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
-from eddy_tracking.preprocess.sss import read_multiple_sss
-from eddy_tracking.preprocess.sst import read_multiple_sst
+from eddy_tracking.preprocess.ancillary import read_ancillary_grids
 
 
 def main() -> None:
@@ -48,8 +47,7 @@ def main() -> None:
     wl_proc, rrs_proc = preprocess_rrs_batch(wavelengths, rrs_native)
 
     print("status: loading_sst_sss_grids")
-    sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
-    sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
+    sst_df, sss_df = read_ancillary_grids(sst_dir, sss_dir)
 
     # Sample SST/SSS at the eddy-mean location and the median date, since we've averaged across the whole eddy's coverage period.
     center_lon = float(df["pixel_lon"].mean())

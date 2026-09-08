@@ -30,6 +30,22 @@ _PIGMENT_DISPLAY_NAMES = {
     "Perid": "Perid",
 }
 SDP_PIGMENT_COLUMNS = tuple(_PIGMENT_DISPLAY_NAMES.values())
+# On-disk pigment name to the space-free suffix used in table columns.
+PIGMENTS = {
+    "T chla": "Tchla",
+    "Zea": "Zea",
+    "DV chla": "DV_chla",
+    "ButFuco": "ButFuco",
+    "HexFuco": "HexFuco",
+    "Allo": "Allo",
+    "MV chlb": "MV_chlb",
+    "Neo": "Neo",
+    "Viola": "Viola",
+    "Fuco": "Fuco",
+    "chl c1+c2": "Chlc12",
+    "chl c3": "Chlc3",
+    "Perid": "Perid",
+}
 
 
 def run_sdp(
@@ -213,6 +229,58 @@ def run_sdp_on_pace_l2(
         pigment_values,
         pace_pixels.attrs,
     )
+
+
+def run_sdp_on_pace_l3(
+    observations: pd.DataFrame,
+    sst_grid: pd.DataFrame,
+    sss_grid: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    sst_values, sss_values = sample_ancillary(
+        sst_grid,
+        sss_grid,
+        lons=observations["pixel_lon"].to_numpy(),
+        lats=observations["pixel_lat"].to_numpy(),
+        times=pd.to_datetime(observations["date"]).to_numpy(),
+    )
+
+    # The GSM physics model needs both ancillary values for backscattering.
+    valid_pixels = np.isfinite(sst_values) & np.isfinite(sss_values)
+    n_dropped = int((~valid_pixels).sum())
+    if n_dropped:
+        print(
+            f"pixels_dropped: {n_dropped}\n"
+            f"total_pixels: {len(valid_pixels)}\n"
+            "reason: missing_sst_sss"
+        )
+    if not valid_pixels.any():
+        return pd.DataFrame(columns=list(SDP_PIGMENT_COLUMNS)), observations.iloc[0:0]  # pyright: ignore[reportArgumentType]
+
+    rrs_columns = [column for column in observations if column.startswith("Rrs_")]
+    wavelengths = np.array(
+        [float(column.split("_")[1]) for column in rrs_columns]
+    )
+    raw_rrs = observations.loc[valid_pixels, rrs_columns].to_numpy()
+
+    # raw_rrs (n_pixels, n_native_wavelengths) -> processed_rrs (n_pixels, n_processed_wavelengths)
+    processed_wavelengths, processed_rrs = preprocess_rrs_batch(
+        wavelengths, raw_rrs
+    )
+
+    predictions, nonconvergent = _predict_pace_spectra(
+        processed_rrs,
+        processed_wavelengths,
+        sst_values[valid_pixels],
+        sss_values[valid_pixels],
+    )
+    if nonconvergent.any():
+        print(
+            f"pixels_dropped: {int(nonconvergent.sum())}\n"
+            f"total_pixels: {len(nonconvergent)}\n"
+            "reason: gsm_inversion_nonconvergence"
+        )
+    pigments = pd.DataFrame(predictions[~nonconvergent], columns=list(SDP_PIGMENT_COLUMNS))  # pyright: ignore[reportArgumentType]
+    return pigments, observations[valid_pixels][~nonconvergent].reset_index(drop=True)
 
 
 def _read_pace_spectral_schema(

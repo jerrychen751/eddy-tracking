@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TypeAlias
@@ -263,3 +265,23 @@ def read_multiple_pace_l2(
     combined.attrs["product_names"] = tuple(product_names)
     combined.attrs["processing_versions"] = tuple(processing_versions)
     return combined
+
+
+def parse_pace_window(filename: str, temporal_res: str) -> tuple[dt.date, dt.date, dt.date] | None:
+    """
+    (repr_date, win_start, win_end) for a PACE file, or None if it doesn't parse.
+
+    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date. For 8-day composites it is the window midpoint; for daily files all three dates are the same day.
+    """
+    if temporal_res == "8D":
+        m = re.search(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.", filename)
+        if m is None:
+            return None
+        start = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
+        end = dt.datetime.strptime(m.group(2), "%Y%m%d").date()
+        return start + (end - start) / 2, start, end
+    m = re.search(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.", filename)
+    if m is None:
+        return None
+    day = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
+    return day, day, day

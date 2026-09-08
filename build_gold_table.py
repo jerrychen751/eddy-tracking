@@ -12,28 +12,10 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-from gulf_stream import compute_signed_distance_km, index_centerlines_by_date
 from eddy_tracking.config import load_config, resolve_gold_dir, resolve_output_dir
-from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
-    TrackEddiesObservations,
-)
-
-# On-disk pigment name to the space-free suffix used in table columns.
-PIGMENTS = {
-    "T chla": "Tchla",
-    "Zea": "Zea",
-    "DV chla": "DV_chla",
-    "ButFuco": "ButFuco",
-    "HexFuco": "HexFuco",
-    "Allo": "Allo",
-    "MV chlb": "MV_chlb",
-    "Neo": "Neo",
-    "Viola": "Viola",
-    "Fuco": "Fuco",
-    "chl c1+c2": "Chlc12",
-    "chl c3": "Chlc3",
-    "Perid": "Perid",
-}
+from eddy_tracking.packages.sdp import PIGMENTS
+from eddy_tracking.preprocess.streamline import compute_signed_distance_km, index_centerlines_by_date
+from eddy_tracking.preprocess.tracks import load_track_observations
 
 
 def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
@@ -63,44 +45,17 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
 
 def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build observation features and birth/death dates for both polarities."""
-    pet_epoch = dt.date(1950, 1, 1)
-    observation_frames = []
-    lifetime_rows = []
-    for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
-        track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
-        tracks = TrackEddiesObservations.load_file(
-            str(track_dir / f"{track_dir.name}_tracks.zarr")
-        )
-        observed = ~tracks.virtual.astype(bool)
-        dates = pd.to_datetime(
-            [
-                pet_epoch + dt.timedelta(days=int(time))
-                for time in tracks.time[observed]
-            ]
-        )
-        track_observations = pd.DataFrame(
-            {
-                "polarity": polarity_value,
-                "track_id": tracks.track[observed].astype(int),
-                "date": dates,
-                "radius_km": tracks.radius_s[observed] / 1000.0,
-                "amplitude_cm": tracks.amplitude[observed] * 100.0,
-            }
-        ).sort_values("date")
-        observation_frames.append(track_observations)
-        for track_id, group in track_observations.groupby("track_id"):
-            lifetime_rows.append(
-                {
-                    "polarity": polarity_value,
-                    "track_id": track_id,
-                    "birth_date": group["date"].min(),
-                    "death_date": group["date"].max(),
-                }
-            )
-    return (
-        pd.concat(observation_frames, ignore_index=True),
-        pd.DataFrame(lifetime_rows),
+    track_observations = load_track_observations(experiment)
+    track_observations["polarity"] = track_observations["polarity"].map({"anticyclone": 0, "cyclone": 1})  # pyright: ignore[reportArgumentType]
+    track_observations = cast(pd.DataFrame, track_observations[
+        ["polarity", "track_id", "date", "radius_km", "amplitude_cm"]
+    ])
+    track_lifetimes = (
+        track_observations.groupby(["polarity", "track_id"])["date"]
+        .agg(birth_date="min", death_date="max")
+        .reset_index()
     )
+    return track_observations, track_lifetimes
 
 
 def load_eddy_dynamics(dynamics_dir: Path) -> pd.DataFrame:

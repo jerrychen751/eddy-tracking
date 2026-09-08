@@ -9,7 +9,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import cast
 
-import numpy as np
 import pandas as pd
 
 from eddy_tracking.config import (
@@ -18,11 +17,8 @@ from eddy_tracking.config import (
     resolve_data_dir,
     resolve_output_dir,
 )
-from eddy_tracking.packages.sdp import run_sdp
-from eddy_tracking.packages.sdp.ancillary import sample_ancillary
-from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
-from eddy_tracking.preprocess.sss import read_multiple_sss
-from eddy_tracking.preprocess.sst import read_multiple_sst
+from eddy_tracking.packages.sdp import run_sdp_on_pace_l3
+from eddy_tracking.preprocess.ancillary import read_ancillary_grids
 
 
 def process_eddy(
@@ -43,58 +39,13 @@ def process_eddy(
         )
         return False
 
-    observations = pd.read_parquet(rrs_path)
-
-    rrs_columns = [column for column in observations if column.startswith("Rrs_")]
-    wavelengths = np.array(
-        [float(column.split("_")[1]) for column in rrs_columns]
-    )
-    raw_rrs = observations[rrs_columns].to_numpy()
-
-    # raw_rrs (n_pixels, n_native_wavelengths) -> processed_rrs (n_pixels, n_processed_wavelengths)
-    processed_wavelengths, processed_rrs = preprocess_rrs_batch(
-        wavelengths, raw_rrs
-    )
-
-    sst_values, sss_values = sample_ancillary(
-        sst_df,
-        sss_df,
-        lons=observations["pixel_lon"].to_numpy(),
-        lats=observations["pixel_lat"].to_numpy(),
-        times=pd.to_datetime(observations["date"]).to_numpy(),
-    )
-
-    # The GSM physics model needs both ancillary values for backscattering.
-    valid_pixels = np.isfinite(sst_values) & np.isfinite(sss_values)
-    n_dropped = int((~valid_pixels).sum())
-    if n_dropped:
-        print(
-            f"pixels_dropped: {n_dropped}\n"
-            f"total_pixels: {len(valid_pixels)}\n"
-            "reason: missing_sst_sss"
-        )
-
-    if not valid_pixels.any():
+    pigments, observations = run_sdp_on_pace_l3(pd.read_parquet(rrs_path), sst_df, sss_df)
+    if pigments.empty:
         print(
             "status: skipped\n"
-            "reason: no_valid_pixels_after_sst_sss_filter"
+            "reason: no_valid_pixels"
         )
         return False
-
-    observations = observations[valid_pixels].reset_index(drop=True)
-    processed_rrs = processed_rrs[valid_pixels]
-    sst_values = sst_values[valid_pixels]
-    sss_values = sss_values[valid_pixels]
-
-    integer_wavelengths = processed_wavelengths.astype(int)
-    rrs_frame = pd.DataFrame(processed_rrs, columns=integer_wavelengths)
-
-    pigments = run_sdp(
-        rrs=rrs_frame,
-        wl=processed_wavelengths,
-        sst=sst_values,
-        sss=sss_values,
-    )
 
     for col_idx, column in enumerate(METADATA_COLS):
         pigments.insert(col_idx, column, observations[column].to_numpy())  # pyright: ignore[reportAttributeAccessIssue]
@@ -113,10 +64,7 @@ def process_eddy(
 def load_worker_ancillary(sst_dir: Path, sss_dir: Path) -> None:
     """Load the ancillary grids once in each SDP worker process."""
     global _worker_ancillary
-    _worker_ancillary = (
-        read_multiple_sst(sorted(sst_dir.glob("*.nc"))),
-        read_multiple_sss(sorted(sss_dir.glob("*.nc4"))),
-    )
+    _worker_ancillary = read_ancillary_grids(sst_dir, sss_dir)
 
 
 def process_eddy_in_worker(rrs_path: Path, out_path: Path) -> bool:
@@ -166,8 +114,7 @@ def main(experiment: str | None = None) -> None:
     print("status: loading_sst_sss_grids")
     n_written = 0
     if max_workers == 1:
-        sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
-        sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
+        sst_df, sss_df = read_ancillary_grids(sst_dir, sss_dir)
         for rrs_path, out_path in tasks:
             if process_eddy(rrs_path, out_path, sst_df, sss_df):
                 n_written += 1

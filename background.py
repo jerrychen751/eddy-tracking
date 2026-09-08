@@ -8,37 +8,24 @@ Writes silver/pigments/background/bg_mean.parquet: one row per composite date wi
 
 import argparse
 import datetime as dt
-import re
 from collections import defaultdict
-from pathlib import Path
 from typing import cast
 
 import numpy as np
 import pandas as pd
 import xarray as xr
-from matplotlib.path import Path as MplPath
-from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
-    TrackEddiesObservations,
-)
 
 from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
-from eddy_tracking.utils.subset import load_rossby_field
-from eddy_tracking.packages.sdp import run_sdp
-from eddy_tracking.packages.sdp.ancillary import sample_ancillary
-from eddy_tracking.packages.sdp.physics import GSMInversionError
-from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
-from eddy_tracking.preprocess.sss import read_multiple_sss
-from eddy_tracking.preprocess.sst import read_multiple_sst
-
-SWOT_SEARCH_DAYS = 4
-
-# on-disk SDP pigment name -> canonical suffix (must match build_gold_table.PIGMENTS)
-PIGMENTS = {
-    "T chla": "Tchla", "Zea": "Zea", "DV chla": "DV_chla", "ButFuco": "ButFuco",
-    "HexFuco": "HexFuco", "Allo": "Allo", "MV chlb": "MV_chlb", "Neo": "Neo",
-    "Viola": "Viola", "Fuco": "Fuco", "chl c1+c2": "Chlc12", "chl c3": "Chlc3",
-    "Perid": "Perid",
-}
+from eddy_tracking.packages.sdp import PIGMENTS, run_sdp_on_pace_l3
+from eddy_tracking.preprocess.ancillary import read_ancillary_grids
+from eddy_tracking.preprocess.pace import parse_pace_window
+from eddy_tracking.preprocess.swot import (
+    SWOT_SEARCH_DAYS,
+    compute_calm_mask_on_pace,
+    find_nearest_swot_file,
+    index_swot_files_by_date,
+)
+from eddy_tracking.preprocess.tracks import EddyObs, build_date_eddy_index, is_in_any_contour, load_tracks
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,137 +45,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def parse_pace_window(filename: str, temporal_res: str) -> tuple[dt.date, dt.date, dt.date] | None:
-    """
-    (repr_date, win_start, win_end) for a PACE file, or None if it doesn't parse.
-
-    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date. For 8-day composites it is the window midpoint; for daily files all three dates are the same day.
-    """
-    if temporal_res == "8D":
-        m = re.search(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.", filename)
-        if m is None:
-            return None
-        start = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
-        end = dt.datetime.strptime(m.group(2), "%Y%m%d").date()
-        return start + (end - start) / 2, start, end
-    m = re.search(r"PACE_OCI\.(\d{8})\.L3m\.DAY\.AOP\.", filename)
-    if m is None:
-        return None
-    day = dt.datetime.strptime(m.group(1), "%Y%m%d").date()
-    return day, day, day
-
-
-def index_swot_files_by_date(swot_dir: Path) -> dict[dt.date, Path]:
-    """Map measurement date (first 8-digit token in the name) to SWOT file path."""
-    swot_date_re = re.compile(r"\d{8}")
-    files = {}
-    for fp in sorted(swot_dir.glob("*.nc")):
-        m = swot_date_re.search(fp.name)
-        if m:
-            files[dt.datetime.strptime(m.group(), "%Y%m%d").date()] = fp
-    return files
-
-
-def find_nearest_swot_file(files: dict[dt.date, Path], target: dt.date) -> Path | None:
-    """SWOT file on target, else the closest within SWOT_SEARCH_DAYS, else None."""
-    for delta in range(SWOT_SEARCH_DAYS + 1):
-        for day in (target - dt.timedelta(delta), target + dt.timedelta(delta)):
-            if day in files:
-                return files[day]
-    return None
-
-
-def load_eddy_contours(
-    cyclone_track_dir: Path, anticyclone_track_dir: Path
-) -> dict[dt.date, list[tuple[np.ndarray, np.ndarray]]]:
-    """
-    Map date -> list of (contour_lon, contour_lat) for every non-virtual eddy.
-
-    Contours come from both polarities, longitudes converted from py-eddy-tracker's 0-360 convention to PACE's -180/180.
-    """
-    pet_epoch = dt.date(1950, 1, 1)
-    contours: dict[dt.date, list] = defaultdict(list)
-    for track_dir in (cyclone_track_dir, anticyclone_track_dir):
-        zarr_path = track_dir / f"{track_dir.name}_tracks.zarr"
-        if not zarr_path.exists():
-            continue
-        tracked = TrackEddiesObservations.load_file(str(zarr_path))
-        keep = ~tracked.virtual.astype(bool)
-        days = [pet_epoch + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
-        contour_lon = (tracked.contour_lon_s[keep] + 180) % 360 - 180
-        contour_lat = tracked.contour_lat_s[keep]
-        for i, day in enumerate(days):
-            contours[day].append((contour_lon[i], contour_lat[i]))
-    return contours
-
-
-def compute_calm_mask_on_pace(swot_fp, pace_lon: np.ndarray, pace_lat: np.ndarray) -> np.ndarray:
-    """
-    Boolean (lat, lon) PACE-grid mask of calm water for one SWOT day.
-
-    Interpolates |Ro| from the coarser SWOT grid onto the PACE pixels and thresholds it. Pixels saved as NaN in the SWOT bronze file interpolate to NaN and fail the comparison, so they are treated as not-calm.
-    """
-    # The DUACS/MIOST source variable is named relative_vorticity, but these files store normalized relative vorticity, not raw zeta in s^-1.
-    # The values are Rossby number (Ro = zeta/f), so "calm" water is a direct threshold on |Ro|.
-    bg_threshold_rossby = 0.1
-    swot_lon, swot_lat, rossby_number = load_rossby_field(swot_fp)
-    abs_rossby_number = xr.DataArray(
-        np.abs(rossby_number),
-        coords={"latitude": swot_lat, "longitude": swot_lon},
-        dims=["latitude", "longitude"],
-    )
-    on_pace = abs_rossby_number.interp(
-        latitude=pace_lat, longitude=pace_lon, method="linear"
-    ).values
-    return on_pace < bg_threshold_rossby
-
-
-def is_in_any_contour(
-    contours: list[tuple[np.ndarray, np.ndarray]], lons: np.ndarray, lats: np.ndarray
-) -> np.ndarray:
-    """Boolean over the given points: inside at least one eddy contour polygon."""
-    points = np.column_stack([lons, lats])  # (n_points,) + (n_points,) -> (n_points, 2)
-    inside = np.zeros(points.shape[0], dtype=bool)
-    for contour_lon, contour_lat in contours:
-        polygon = MplPath(np.column_stack([contour_lon, contour_lat]))  # (n_vertices,) + (n_vertices,) -> (n_vertices, 2)
-        inside |= polygon.contains_points(points)
-    return inside
-
-
-def run_sdp_filtering_nonconvergent(
-    rrs: pd.DataFrame,
-    wavelengths: np.ndarray,
-    sst: np.ndarray,
-    sss: np.ndarray,
-) -> tuple[pd.DataFrame, int]:
-    try:
-        return run_sdp(rrs=rrs, wl=wavelengths, sst=sst, sss=sss), 0
-    except GSMInversionError:
-        if len(rrs) == 1:
-            return pd.DataFrame(columns=list(PIGMENTS)), 1  # pyright: ignore[reportArgumentType]
-
-    midpoint = len(rrs) // 2
-    left, left_dropped = run_sdp_filtering_nonconvergent(
-        rrs.iloc[:midpoint].reset_index(drop=True),
-        wavelengths,
-        sst[:midpoint],
-        sss[:midpoint],
-    )
-    right, right_dropped = run_sdp_filtering_nonconvergent(
-        rrs.iloc[midpoint:].reset_index(drop=True),
-        wavelengths,
-        sst[midpoint:],
-        sss[midpoint:],
-    )
-    predictions = [frame for frame in (left, right) if not frame.empty]
-    return (
-        pd.concat(predictions, ignore_index=True)
-        if predictions
-        else pd.DataFrame(columns=list(PIGMENTS)),  # pyright: ignore[reportArgumentType]
-        left_dropped + right_dropped,
-    )
-
-
 def compute_background_means(
     df: pd.DataFrame,
     sst_df: pd.DataFrame,
@@ -197,39 +53,9 @@ def compute_background_means(
     """
     Run the SDP model on background pixels and average each pigment.
 
-    Mirrors run_sdp.process_eddy: preprocess Rrs to 1 nm, sample nearest SST/SSS, drop pixels missing either, run SDP. Returns bg_mean_<pigment> for the 13 pigments plus n_bg_pixels, or None if no pixel survives the SST/SSS filter.
+    Shares run_sdp_on_pace_l3 with run_sdp.process_eddy: preprocess Rrs to 1 nm, sample nearest SST/SSS, drop pixels missing either, run SDP. Returns bg_mean_<pigment> for the 13 pigments plus n_bg_pixels, or None if no pixel survives the SST/SSS filter and the SDP inversion.
     """
-    rrs_cols = [c for c in df.columns if c.startswith("Rrs_")]
-    wavelengths = np.array([float(c.split("_")[1]) for c in rrs_cols])
-    wl_processed, rrs_processed = preprocess_rrs_batch(wavelengths, df[rrs_cols].to_numpy())
-
-    sst_vals, sss_vals = sample_ancillary(
-        sst_df,
-        sss_df,
-        lons=df["pixel_lon"].to_numpy(),
-        lats=df["pixel_lat"].to_numpy(),
-        times=pd.to_datetime(df["date"]).to_numpy(),
-    )
-    valid = np.isfinite(sst_vals) & np.isfinite(sss_vals)
-    if valid.sum() == 0:
-        return None
-
-    # rrs_processed[valid]: (n_pixels, n_wl_1nm) -> (n_valid, n_wl_1nm)
-    rrs_frame = pd.DataFrame(
-        rrs_processed[valid], columns=wl_processed.astype(int)
-    )
-    pigments_df, n_nonconvergent = run_sdp_filtering_nonconvergent(
-        rrs_frame,
-        wl_processed,
-        sst_vals[valid],
-        sss_vals[valid],
-    )
-    if n_nonconvergent:
-        print(
-            f"background_pixels_dropped: {n_nonconvergent}\n"
-            f"total_background_pixels: {len(rrs_frame)}\n"
-            "reason: gsm_inversion_nonconvergence"
-        )
+    pigments_df, _ = run_sdp_on_pace_l3(df, sst_df, sss_df)
     if pigments_df.empty:
         return None
     means = {f"bg_mean_{canon}": float(pigments_df[raw].mean()) for raw, canon in PIGMENTS.items()}
@@ -255,15 +81,15 @@ def main(
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
     out_dir = resolve_output_dir(experiment, "pigments", "background")
-    cyclone_track_dir = resolve_output_dir(experiment, "eddy_track", "cyclone")
-    anticyclone_track_dir = resolve_output_dir(experiment, "eddy_track", "anticyclone")
     temporal_res = cfg["collocate_pace"].get("temporal_resolution", "DAY")
 
     swot_files = index_swot_files_by_date(swot_dir)
-    eddy_contours = load_eddy_contours(cyclone_track_dir, anticyclone_track_dir)
+    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
+    for polarity in ("cyclone", "anticyclone"):
+        for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity).items():
+            date_index[day].extend(eddies)
     print("status: loading_sst_sss_grids")
-    sst_df = read_multiple_sst(sorted(sst_dir.glob("*.nc")))
-    sss_df = read_multiple_sss(sorted(sss_dir.glob("*.nc4")))
+    sst_df, sss_df = read_ancillary_grids(sst_dir, sss_dir)
 
     pace_files = sorted(pace_dir.glob("*.nc"))
     if limit:
@@ -314,7 +140,7 @@ def main(
         window_contours = []
         day = win_start
         while day <= win_end:
-            window_contours.extend(eddy_contours.get(day, []))
+            window_contours.extend((eddy.contour_lon, eddy.contour_lat) for eddy in date_index.get(day, []))
             day += dt.timedelta(days=1)
         if window_contours:
             inside = is_in_any_contour(
@@ -347,7 +173,7 @@ def main(
             print(
                 f"date: {repr_date}\n"
                 "status: skipped\n"
-                "reason: no_valid_pixels_after_sst_sss_filter"
+                "reason: no_valid_pixels"
             )
             continue
         means["date"] = date_value

@@ -10,11 +10,15 @@ from typing import cast
 import numpy as np
 import pandas as pd
 import xarray as xr
-from matplotlib.path import Path as PolygonPath
 
-from collocate_pace import EddyObs, build_date_eddy_index, collect_eddies_for_window
-from eddy_tracking.packages.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_data_dir, resolve_gold_dir
+from eddy_tracking.preprocess.tracks import (
+    EddyObs,
+    build_date_eddy_index,
+    collect_eddies_for_window,
+    load_tracks,
+    mask_pixels_inside_contour,
+)
 
 
 def build_plankton_table(experiment: str) -> pd.DataFrame:
@@ -25,11 +29,9 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
     settings = cfg["collocate_plankton"]
     first_day, last_day = [dt.date.fromisoformat(value) for value in cfg["base"]["time"]["eddy_date_range"]]
     data_dir = PROJECT_ROOT / "data" / experiment
-    track_dir = data_dir / "silver/eddy_track"
     date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
     for polarity in ("cyclone", "anticyclone"):
-        tracked = TrackEddiesObservations.load_file(str(track_dir / polarity / f"{polarity}_tracks.zarr"))
-        for day, eddies in build_date_eddy_index(tracked, polarity, date_range=(first_day, last_day)).items():
+        for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity, date_range=(first_day, last_day)).items():
             date_index[day].extend(eddies)
     windows = []
     for year in range(first_day.year, last_day.year + 1):
@@ -53,13 +55,11 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
                 longitude=np.flatnonzero((lon >= eddy.contour_lon.min()) & (lon <= eddy.contour_lon.max())),
                 latitude=np.flatnonzero((lat >= eddy.contour_lat.min()) & (lat <= eddy.contour_lat.max())),
             )
-            lon_grid, lat_grid = np.meshgrid(box["longitude"].to_numpy(), box["latitude"].to_numpy())  # (n_box_lon,) + (n_box_lat,) -> (n_box_lat, n_box_lon) each
-            polygon = PolygonPath(np.column_stack([eddy.contour_lon, eddy.contour_lat]))
-            inside = polygon.contains_points(np.column_stack([lon_grid.ravel(), lat_grid.ravel()]))  # (n_box_lat*n_box_lon, 2) -> (n_box_lat*n_box_lon,)
+            inside = mask_pixels_inside_contour(box["longitude"].to_numpy(), box["latitude"].to_numpy(), eddy.contour_lon, eddy.contour_lat)
             n_inside = int(inside.sum())
             if n_inside == 0:
                 continue
-            chl_valid = np.isfinite(box["CHL"].to_numpy().ravel()[inside])
+            chl_valid = np.isfinite(box["CHL"].to_numpy()[inside])
             if chl_valid.sum() < settings["min_pixels"] or chl_valid.mean() < settings["min_coverage"]:
                 continue
             row = {
@@ -69,8 +69,8 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
                 "n_pixels": n_inside, "valid_frac": float(chl_valid.mean()),
             }
             for field in concentrations:
-                values = box[field].to_numpy().ravel()[inside]
-                uncertainty = box[f"{field}_uncertainty"].to_numpy().ravel()[inside]
+                values = box[field].to_numpy()[inside]
+                uncertainty = box[f"{field}_uncertainty"].to_numpy()[inside]
                 valid = np.isfinite(values)
                 row[field] = float(values[valid].mean()) if valid.any() else np.nan
                 row[f"{field}_uncertainty"] = float(np.nanmean(uncertainty[valid])) if valid.any() else np.nan

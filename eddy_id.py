@@ -5,7 +5,6 @@ For each daily NetCDF, subsets to the configured lon/lat region, applies a Besse
 """
 
 import argparse
-import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +14,7 @@ import numpy as np
 import xarray as xr
 
 from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
+from eddy_tracking.preprocess.swot import index_swot_files_by_date
 
 
 def resolve_eddy_output_paths(
@@ -121,8 +121,8 @@ def main(experiment: str | None = None) -> None:
     contour_step = cfg["eddy_id"]["step"]
     shape_error = cfg["eddy_id"]["shape_error"]
 
-    input_paths = list(swot_dir.glob("*.nc"))
-    if not input_paths:
+    swot_files = index_swot_files_by_date(swot_dir)
+    if not swot_files:
         print(
             "status: skipped\n"
             "reason: no_nc_files\n"
@@ -134,11 +134,8 @@ def main(experiment: str | None = None) -> None:
     n_failed = 0
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
-        for input_path in input_paths:
-            match = re.search(r"(\d{8})", input_path.name)
-            if not match:
-                raise ValueError(f"No 8-digit date in filename: {input_path.name}")
-            date = datetime.strptime(match.group(1), "%Y%m%d")
+        for day, input_path in swot_files.items():
+            date = datetime(day.year, day.month, day.day)
             anticyclone_path, cyclone_path = resolve_eddy_output_paths(
                 anticyclone_dir, cyclone_dir, date
             )
@@ -175,7 +172,7 @@ def main(experiment: str | None = None) -> None:
                 )
 
     if n_failed:
-        raise RuntimeError(f"{n_failed}/{len(input_paths)} files failed in eddy_id")
+        raise RuntimeError(f"{n_failed}/{len(swot_files)} files failed in eddy_id")
 
 
 if __name__ == "__main__":

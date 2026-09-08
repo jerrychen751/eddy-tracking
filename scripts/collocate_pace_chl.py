@@ -15,25 +15,21 @@ import argparse
 import datetime as dt
 import json
 import re
-import sys
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from background import (  # noqa: E402
+from eddy_tracking.config import PROJECT_ROOT, resolve_output_dir
+from eddy_tracking.preprocess.swot import (
     SWOT_SEARCH_DAYS,
     compute_calm_mask_on_pace,
     find_nearest_swot_file,
-    is_in_any_contour,
     index_swot_files_by_date,
-    load_eddy_contours,
 )
-from eddy_tracking.config import resolve_output_dir  # noqa: E402
+from eddy_tracking.preprocess.tracks import EddyObs, build_date_eddy_index, is_in_any_contour, load_tracks
 
 
 def read_eddy_pixels(experiment: str) -> pd.DataFrame:
@@ -77,10 +73,10 @@ def collocate_chlor_a(
     bgc_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.BGC\.")
     rrs_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
     swot_files = index_swot_files_by_date(data_dir / "bronze" / "swot_l4_open_ocean")
-    contours = load_eddy_contours(
-        resolve_output_dir(experiment, "eddy_track", "cyclone"),
-        resolve_output_dir(experiment, "eddy_track", "anticyclone"),
-    )
+    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
+    for polarity in ("cyclone", "anticyclone"):
+        for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity).items():
+            date_index[day].extend(eddies)
     pixels = read_eddy_pixels(experiment)
     print(
         f"eddy_pixels: {len(pixels):,}\n"
@@ -172,7 +168,7 @@ def collocate_chlor_a(
         window_contours = []
         day = win_start
         while day <= win_end:
-            window_contours.extend(contours.get(day, []))
+            window_contours.extend((eddy.contour_lon, eddy.contour_lat) for eddy in date_index.get(day, []))
             day += dt.timedelta(days=1)
         if window_contours:
             # ravel()[candidate]: (n_lat, n_lon) -> (n_lat * n_lon,) -> (n_candidate,)

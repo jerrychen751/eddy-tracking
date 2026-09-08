@@ -1,9 +1,5 @@
-"""Spatial and temporal subsetting predicates plus SWOT field loading."""
+"""Spatial and temporal subsetting predicates."""
 import datetime as dt
-from pathlib import Path
-
-import numpy as np
-import xarray as xr
 
 
 def parse_date_range(date_range: list[str] | None) -> tuple[dt.date, dt.date] | None:
@@ -39,15 +35,3 @@ def is_in_subset(
         if not (lon_lo <= center_lon <= lon_hi and lat_lo <= center_lat <= lat_hi):
             return False
     return True
-
-
-def load_rossby_field(swot_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return longitude, latitude, and the saved Rossby-number field."""
-    with xr.open_dataset(swot_path) as dataset:
-        if "time" in dataset["relative_vorticity"].dims:
-            # (1, n_lat, n_lon) -> (n_lat, n_lon)
-            dataset = dataset.isel(time=0)
-        longitude = dataset["longitude"].to_numpy()
-        latitude = dataset["latitude"].to_numpy()
-        rossby_number = dataset["relative_vorticity"].to_numpy()
-    return longitude, latitude, rossby_number
