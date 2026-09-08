@@ -8,12 +8,10 @@ The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, p
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
 
 import earthaccess
 import xarray as xr
@@ -180,13 +178,8 @@ def download_pace_l3(
     return saved, skipped, errors
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Download and save the AOP and BGC PACE files of an experiment, exiting if any date fails."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     longitude_range = tuple(cfg["base"]["region"]["lon_range"])
     latitude_range = tuple(cfg["base"]["region"]["lat_range"])
@@ -221,4 +214,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

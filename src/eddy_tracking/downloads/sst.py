@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
 
 import earthaccess
 import xarray as xr
@@ -164,13 +162,8 @@ def download_aqua_sst_8d_4km(
     return saved, errors
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Download configured SST files, exiting if any granule fails."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     n_saved, n_errors = download_aqua_sst_8d_4km(
         date_range=tuple(cfg["base"]["time"]["rrs_date_range"]),
@@ -190,4 +183,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

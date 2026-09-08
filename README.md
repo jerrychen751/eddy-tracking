@@ -33,7 +33,7 @@ cp .env.example .env # then fill in your AVISO FTP and Copernicus Marine credent
 `uv sync` reads `pyproject.toml` and `uv.lock` and builds an exact, reproducible environment.
 Run pipeline commands through it with `uv run`, for example `uv run python -m eddy_tracking.pipeline <experiment>`, or `source .venv/bin/activate` once and call `python` directly.
 
-`pyeddytracker` is installed from PyPI. `eddy_id.py` calls PET's
+py-eddy-tracker (PET) is vendored at `src/eddy_tracking/packages/py_eddy_tracker/`, not installed from PyPI. `eddy_id.py` calls PET's
 `grid.eddy_identification(...)` directly and writes explicit output filenames,
 so it does not rely on PET's CLI filename template path.
 

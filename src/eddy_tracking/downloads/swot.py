@@ -1,14 +1,13 @@
 """Download, trim, and optionally mask daily AVISO L4 SSH files."""
 
-import argparse
 import re
+import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import cast
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt
@@ -225,13 +224,8 @@ def download_files(settings: DownloadSettings) -> list[str]:
     return failures
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Download configured SWOT files in parallel and trim them to the region."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     failures = download_files(load_settings(experiment))
     if failures:
         print(
@@ -244,4 +238,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import argparse
 import calendar
 import datetime as dt
+import sys
 from pathlib import Path
-from typing import cast
 
 import copernicusmarine
 
@@ -63,13 +62,8 @@ def download_cmems_dataset(
     return saved
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Download the months of the plankton dataset that cover the eddy tracking window of the experiment."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     n_saved = download_cmems_dataset(
         date_range=tuple(cfg["base"]["time"]["eddy_date_range"]),
@@ -86,4 +80,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

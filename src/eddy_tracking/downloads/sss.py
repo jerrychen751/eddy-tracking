@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import argparse
 import datetime as dt
 import re
 import shutil
+import sys
 from pathlib import Path
-from typing import cast
 
 from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import login_harmony
@@ -113,13 +112,8 @@ def download_smap_sss_8d(
     return saved, failed
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Download configured SSS files and exit if a window fails."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     n_saved, n_failed = download_smap_sss_8d(
         date_range=tuple(cfg["base"]["time"]["rrs_date_range"]),
@@ -147,4 +141,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])
