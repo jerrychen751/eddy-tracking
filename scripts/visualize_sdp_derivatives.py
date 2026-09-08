@@ -4,7 +4,6 @@ Visualize the SDP preprocessing chain on a real collocated PACE pixel.
 Produces a 4-panel figure: raw Rrs + GSM model fit, residual (observed - modeled), first spectral derivative of residual, second spectral derivative of residual. Makes the case for 2nd derivative feature engineering visually obvious.
 """
 
-import sys
 from pathlib import Path
 from typing import cast
 
@@ -13,24 +12,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
+from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
+from eddy_tracking.packages.sdp.ancillary import sample_ancillary
+from eddy_tracking.packages.sdp.physics import get_rrs_residuals
+from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
+from eddy_tracking.preprocess.sss import read_multiple_sss
+from eddy_tracking.preprocess.sst import read_multiple_sst
+
 
 def main() -> None:
     """Render the SDP derivative cascade and write it to visuals/sdp_derivative_cascade.png under the repo root."""
     repo_root = Path(__file__).resolve().parent.parent
     experiment = "gulf_stream_20240305_20260531"
     output_path = repo_root / "visuals" / "sdp_derivative_cascade.png"
-
-    repo_path = str(repo_root)
-    sys.path.insert(0, repo_path)
-    try:
-        from utils.config import load_config, resolve_data_dir, resolve_output_dir
-        from eddy_tracking.packages.sdp.ancillary import sample_ancillary
-        from eddy_tracking.packages.sdp.physics import get_rrs_residuals
-        from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
-        from eddy_tracking.preprocess.sss import read_multiple_sss
-        from eddy_tracking.preprocess.sst import read_multiple_sst
-    finally:
-        sys.path.remove(repo_path)
 
     cfg = load_config(experiment)
     sst_dir = resolve_data_dir(cfg, "sst_dir")

@@ -10,6 +10,7 @@ from typing import cast
 
 import copernicusmarine
 
+from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import load_cmems_credentials
 
 
@@ -68,8 +69,6 @@ def main(experiment: str | None = None) -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
         experiment = cast(str, parser.parse_args().experiment)
-
-    from utils.config import load_config, resolve_data_dir
 
     cfg = load_config(experiment)
     n_saved = download_cmems_dataset(

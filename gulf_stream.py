@@ -20,7 +20,7 @@ import xarray as xr
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import uniform_filter
 
-from utils.config import load_config, resolve_data_dir, resolve_output_dir
+from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 
 KM_PER_DEG_LAT = 111.0
 

@@ -12,7 +12,7 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-from utils.config import (
+from eddy_tracking.config import (
     METADATA_COLS,
     load_config,
     resolve_data_dir,

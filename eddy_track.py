@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from typing import cast
 
-from utils.config import load_config, resolve_output_dir
+from eddy_tracking.config import load_config, resolve_output_dir
 from eddy_tracking.packages.py_eddy_tracker.tracking import Correspondances
 
 

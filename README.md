@@ -229,14 +229,13 @@ data/             per-experiment medallion layers (gitignored, regenerable):
     gold/         analysis-ready eddy-pigment and eddy-plankton tables
 outputs/          legacy outputs from older experiments (pre-medallion)
 src/eddy_tracking/
+  config.py       config loader, medallion path helpers, METADATA_COLS
   downloads/      importable SWOT, PACE, SST, SSS, and Copernicus Marine download modules
   packages/
     sdp/          SDP pigment model (Kramer et al. 2022)
     phytoclass/   retained PhytoClass package; inactive
     py_eddy_tracker/
                   vendored eddy identification and tracking package
-utils/
-  config.py       config loader, medallion path helpers, METADATA_COLS
 notebooks/        exploratory analysis
 slurm/            HPC job scripts
 docs/             current research scope and evidence requirements

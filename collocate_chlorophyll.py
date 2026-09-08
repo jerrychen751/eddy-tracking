@@ -16,7 +16,7 @@ from matplotlib.path import Path as PolygonPath
 from collocate_pace import EddyObs, build_date_eddy_index, collect_eddies_for_window
 from eddy_tracking.packages.py_eddy_tracker.observations.tracking import TrackEddiesObservations
 from gulf_stream import load_track_observations
-from utils.config import PROJECT_ROOT, load_config, resolve_output_dir
+from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_output_dir
 
 
 def collect_chlorophyll_files(

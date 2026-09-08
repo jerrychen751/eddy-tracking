@@ -14,6 +14,7 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt
 import xarray as xr
 
+from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import login_aviso, load_aviso_credentials
 
 
@@ -38,8 +39,6 @@ class DownloadSettings:
 
 
 def load_settings(experiment: str) -> DownloadSettings:
-    from utils.config import load_config, resolve_data_dir
-
     credentials = load_aviso_credentials()
     cfg = load_config(experiment)
     return DownloadSettings(

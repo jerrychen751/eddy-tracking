@@ -22,7 +22,7 @@ from matplotlib.figure import Figure
 from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 from scipy.spatial.distance import squareform
 
-from utils.config import METADATA_COLS, resolve_output_dir
+from eddy_tracking.config import METADATA_COLS, resolve_output_dir
 
 DISPLAY_NAMES = {
     "DV chla": "DV Chl-a",

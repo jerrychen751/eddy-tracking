@@ -33,7 +33,7 @@ from background import (  # noqa: E402
     index_swot_files_by_date,
     load_eddy_contours,
 )
-from utils.config import resolve_output_dir  # noqa: E402
+from eddy_tracking.config import resolve_output_dir  # noqa: E402
 
 
 def read_eddy_pixels(experiment: str) -> pd.DataFrame:

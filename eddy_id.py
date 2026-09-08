@@ -14,7 +14,7 @@ from typing import cast
 import numpy as np
 import xarray as xr
 
-from utils.config import load_config, resolve_data_dir, resolve_output_dir
+from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 
 
 def resolve_eddy_output_paths(

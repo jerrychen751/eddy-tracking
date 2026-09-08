@@ -13,6 +13,7 @@ import earthaccess
 import xarray as xr
 from earthaccess import DataGranule
 
+from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
     login_earthdata,
@@ -169,8 +170,6 @@ def main(experiment: str | None = None) -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument("experiment")
         experiment = cast(str, parser.parse_args().experiment)
-
-    from utils.config import load_config, resolve_data_dir
 
     cfg = load_config(experiment)
     n_saved, n_errors = download_aqua_sst_8d_4km(

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from gulf_stream import compute_signed_distance_km, index_centerlines_by_date
-from utils.config import load_config, resolve_gold_dir, resolve_output_dir
+from eddy_tracking.config import load_config, resolve_gold_dir, resolve_output_dir
 from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
     TrackEddiesObservations,
 )

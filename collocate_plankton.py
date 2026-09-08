@@ -14,7 +14,7 @@ from matplotlib.path import Path as PolygonPath
 
 from collocate_pace import EddyObs, build_date_eddy_index, collect_eddies_for_window
 from eddy_tracking.packages.py_eddy_tracker.observations.tracking import TrackEddiesObservations
-from utils.config import PROJECT_ROOT, load_config, resolve_data_dir, resolve_gold_dir
+from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_data_dir, resolve_gold_dir
 
 
 def build_plankton_table(experiment: str) -> pd.DataFrame:

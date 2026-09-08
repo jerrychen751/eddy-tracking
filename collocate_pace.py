@@ -19,7 +19,7 @@ import pandas as pd
 import xarray as xr
 from matplotlib.path import Path as MplPath
 
-from utils.config import (
+from eddy_tracking.config import (
     METADATA_COLS,
     load_config,
     resolve_data_dir,

@@ -21,7 +21,7 @@ from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
     TrackEddiesObservations,
 )
 
-from utils.config import load_config, resolve_data_dir, resolve_output_dir
+from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.utils.subset import load_rossby_field
 from eddy_tracking.packages.sdp import run_sdp
 from eddy_tracking.packages.sdp.ancillary import sample_ancillary

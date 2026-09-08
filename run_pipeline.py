@@ -17,7 +17,7 @@ from collections.abc import Collection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from utils.config import PROJECT_ROOT
+from eddy_tracking.config import PROJECT_ROOT
 
 # A stage name resolves to a module inside _run_stage, or else to <stage>.py at the project root: eddy_id -> eddy_id.py.
 DEFAULT_STAGES = [
