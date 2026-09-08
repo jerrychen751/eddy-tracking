@@ -1,7 +1,7 @@
 # Slurm job scripts
 
 HPC Slurm job scripts for running the pigment branch of the
-eddy-tracking pipeline on PACE Phoenix. The local `run_pipeline.py` now runs
+eddy-tracking pipeline on PACE Phoenix. The local `python -m eddy_tracking.pipeline` runner now runs
 the full gold-table path; these Slurm scripts do not yet submit `gulf_stream`,
 `eddy_dynamics`, `background`, or `build_gold_table`.
 All jobs use `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.

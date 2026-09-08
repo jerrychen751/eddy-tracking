@@ -4,9 +4,9 @@ Pipeline orchestrator for eddy-tracking experiments.
 Runs pipeline stages in the correct order with parallel downloads and stage selection for partial re-runs.
 
 Usage:
-    python run_pipeline.py <experiment> # gold-table stages
-    python run_pipeline.py <experiment> stage1 stage2 ... # specific stages
-    python run_pipeline.py <experiment> --from <stage> # from stage onward
+    python -m eddy_tracking.pipeline <experiment> # gold-table stages
+    python -m eddy_tracking.pipeline <experiment> stage1 stage2 ... # specific stages
+    python -m eddy_tracking.pipeline <experiment> --from <stage> # from stage onward
 """
 
 import argparse
@@ -19,7 +19,7 @@ from datetime import datetime
 
 from eddy_tracking.config import PROJECT_ROOT
 
-# A stage name resolves to a module inside _run_stage, or else to <stage>.py at the project root: eddy_id -> eddy_id.py.
+# A stage name resolves to a module inside _run_stage, or else to eddy_tracking.pipeline.<stage>: eddy_id -> eddy_tracking.pipeline.eddy_id.
 DEFAULT_STAGES = [
     "download_swot",
     "download_pace",
@@ -55,7 +55,7 @@ def _log_stage(action: str, stage: str) -> None:
 
 def _run_stage(experiment: str, stage: str) -> None:
     """Run one stage as a child process, printing start and completion times."""
-    # A download stage runs as a module because it lives under src/, not as a <stage>.py script at the project root.
+    # A download stage lives under eddy_tracking.downloads, not eddy_tracking.pipeline, so it names its own modules.
     stage_modules = {
         "download_swot": ("eddy_tracking.downloads.swot",),
         "download_pace": ("eddy_tracking.downloads.pace",),
@@ -65,28 +65,11 @@ def _run_stage(experiment: str, stage: str) -> None:
         ),
         "download_cmems": ("eddy_tracking.downloads.cmems",),
     }
-    modules = stage_modules.get(stage)
-    if modules is not None:
-        commands = [
-            [sys.executable, "-m", module, experiment]
-            for module in modules
-        ]
-    else:
-        script = PROJECT_ROOT / f"{stage}.py"
-        if not script.exists():
-            print(
-                "status: error\n"
-                "reason: script_not_found\n"
-                f"stage: {stage}\n"
-                f"script: {script}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        commands = [[sys.executable, str(script), experiment]]
+    modules = stage_modules.get(stage, (f"eddy_tracking.pipeline.{stage}",))
 
     _log_stage("START", stage)
-    for command in commands:
-        subprocess.run(command, check=True)
+    for module in modules:
+        subprocess.run([sys.executable, "-m", module, experiment], check=True)
     _log_stage("DONE", stage)
 
 

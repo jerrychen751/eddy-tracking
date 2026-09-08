@@ -20,4 +20,4 @@
 cd ~/projects/eddy-tracking
 source .venv/bin/activate
 : "${EXPERIMENT:?EXPERIMENT env var is not set}"
-python -u run_sdp.py "$EXPERIMENT"
+python -u -m eddy_tracking.pipeline.run_sdp "$EXPERIMENT"

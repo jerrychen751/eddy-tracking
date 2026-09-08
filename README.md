@@ -31,7 +31,7 @@ cp .env.example .env # then fill in your AVISO FTP and Copernicus Marine credent
 ```
 
 `uv sync` reads `pyproject.toml` and `uv.lock` and builds an exact, reproducible environment.
-Run pipeline commands through it with `uv run`, for example `uv run python run_pipeline.py <experiment>`, or `source .venv/bin/activate` once and call `python` directly.
+Run pipeline commands through it with `uv run`, for example `uv run python -m eddy_tracking.pipeline <experiment>`, or `source .venv/bin/activate` once and call `python` directly.
 
 `pyeddytracker` is installed from PyPI. `eddy_id.py` calls PET's
 `grid.eddy_identification(...)` directly and writes explicit output filenames,
@@ -75,7 +75,7 @@ PACE and SST first request a remote subset. If that request fails, the stage use
 
 ### Transformation DAG
 
-For standard PACE chlorophyll, run `uv run python run_pipeline.py <experiment> collocate_chlorophyll` after `gulf_stream`. This optional stage requires local 8-day BGC files in `base.data.pace_bgc_dir`. The download stage fetches the AOP and BGC collections named in `base.download.pace.collection_ids` and keeps only files of `base.download.pace.version`.
+For standard PACE chlorophyll, run `uv run python -m eddy_tracking.pipeline <experiment> collocate_chlorophyll` after `gulf_stream`. This optional stage requires local 8-day BGC files in `base.data.pace_bgc_dir`. The download stage fetches the AOP and BGC collections named in `base.download.pace.collection_ids` and keeps only files of `base.download.pace.version`.
 
 The canonical experiment uses 50% valid interior coverage and at least 10 pixels, set in `collocate_chlorophyll`. The stage checks composite dates, grid coordinates, units, physical track identities, and movement lifetimes before it writes `silver/pace_chl/eddy_chlor_a.parquet`. It preserves the prior table if validation or the write fails. Missing satellite pixels remain valid gaps. The lifetime notebook does not read this table; its chlorophyll source is the plankton table below.
 
@@ -167,7 +167,7 @@ PhytoClass is inactive for now. Its code remains in `src/eddy_tracking/packages/
 
 ### Orchestration
 
-`run_pipeline.py` is a lightweight local subprocess runner for producing the
+`python -m eddy_tracking.pipeline` is a lightweight local subprocess runner for producing the
 gold table. It runs the four download stages in parallel and then runs these
 stages sequentially:
 
@@ -183,19 +183,19 @@ behavior. The hard-coded default stage list is the current gold-table path.
 Run the full local gold-table pipeline:
 
 ```bash
-uv run python run_pipeline.py <experiment>
+uv run python -m eddy_tracking.pipeline <experiment>
 ```
 
 Resume from a stage:
 
 ```bash
-uv run python run_pipeline.py <experiment> --from run_sdp
+uv run python -m eddy_tracking.pipeline <experiment> --from run_sdp
 ```
 
 Run an explicit subset:
 
 ```bash
-uv run python run_pipeline.py <experiment> eddy_dynamics background build_gold_table
+uv run python -m eddy_tracking.pipeline <experiment> eddy_dynamics background build_gold_table
 ```
 
 ## HPC (PACE Phoenix cluster)
@@ -231,11 +231,14 @@ outputs/          legacy outputs from older experiments (pre-medallion)
 src/eddy_tracking/
   config.py       config loader, medallion path helpers, METADATA_COLS
   downloads/      importable SWOT, PACE, SST, SSS, and Copernicus Marine download modules
+  pipeline/       the stage modules and the orchestrator (python -m eddy_tracking.pipeline)
+  preprocess/     readers for the bronze files and the track product, plus the Gulf Stream centerline
   packages/
     sdp/          SDP pigment model (Kramer et al. 2022)
     phytoclass/   retained PhytoClass package; inactive
     py_eddy_tracker/
                   vendored eddy identification and tracking package
+scripts/          analysis scripts that read the pipeline outputs
 notebooks/        exploratory analysis
 slurm/            HPC job scripts
 docs/             current research scope and evidence requirements

@@ -1,11 +1,10 @@
 """Build the gold table of Copernicus Marine plankton field means inside each tracked eddy, one row per eddy and 8-day composite window."""
 
-import argparse
 import datetime as dt
+import sys
 from collections import defaultdict
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -86,12 +85,8 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
     return table
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Write gold/eddy_plankton_table.parquet through a temporary file, so a failed build leaves the prior table in place."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
     table = build_plankton_table(experiment)
     out_path = resolve_gold_dir(experiment, "eddy_plankton_table.parquet")
     with NamedTemporaryFile(dir=out_path.parent, suffix=".parquet", delete=False) as temporary:
@@ -105,4 +100,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

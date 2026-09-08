@@ -4,8 +4,8 @@ Assemble the gold eddy-pigment table: one analysis-ready row per eddy-day.
 Aggregates per-pixel pigments to eddy-interior means, joins track and environmental features, and writes ``gold/eddy_pigment_table.parquet``.
 """
 
-import argparse
 import datetime as dt
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -108,13 +108,8 @@ def compute_gs_distance(centerline_by_date, date, center_lon, center_lat) -> flo
     return dist
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Assemble and write the experiment's gold eddy-pigment table."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     gulf_stream_dir = resolve_output_dir(experiment, "gulf_stream")
     background_dir = resolve_output_dir(experiment, "pigments", "background")
@@ -254,4 +249,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

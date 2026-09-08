@@ -8,9 +8,8 @@ Outputs to silver/gulf_stream/:
   - eddy_movement.parquet holds one row per (polarity, track_id): movement class, sides, and signed axis distances in km
 """
 
-import argparse
 import datetime as dt
-from typing import cast
+import sys
 
 import numpy as np
 import pandas as pd
@@ -21,14 +20,8 @@ from eddy_tracking.preprocess.swot import index_swot_files_by_date
 from eddy_tracking.preprocess.tracks import load_track_observations
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Trace daily streamlines and write streamline and movement Parquet files."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        args = parser.parse_args()
-        experiment = cast(str, args.experiment)
-
     cfg = load_config(experiment)
     swot_dir = resolve_data_dir(cfg, "swot_dir")
     out_dir = resolve_output_dir(experiment, "gulf_stream")
@@ -96,4 +89,4 @@ def _classify_streamline_side(centerline_by_date, row) -> tuple[float, str]:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

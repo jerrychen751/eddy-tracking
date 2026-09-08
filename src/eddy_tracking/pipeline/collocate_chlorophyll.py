@@ -1,12 +1,11 @@
 """Build validated eddy means from standard PACE chlor_a without SDP inputs."""
 
-import argparse
 import datetime as dt
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -187,12 +186,8 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
     return chl
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Validate inputs and atomically replace silver/pace_chl/eddy_chlor_a.parquet; preserve the prior table on failure."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
     chl = build_chlorophyll_table(experiment)
     out_path = resolve_output_dir(experiment, "pace_chl") / "eddy_chlor_a.parquet"
     with NamedTemporaryFile(dir=out_path.parent, suffix=".parquet", delete=False) as temporary:
@@ -206,4 +201,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

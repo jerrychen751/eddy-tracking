@@ -4,10 +4,9 @@ Run the SDP pigment model on collocated PACE Rrs observations.
 For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS, runs the Kramer et al. (2022) model, and writes a pigment Parquet file.
 """
 
-import argparse
+import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import cast
 
 import pandas as pd
 
@@ -73,13 +72,8 @@ def process_eddy_in_worker(rrs_path: Path, out_path: Path) -> bool:
     return process_eddy(rrs_path, out_path, sst_df, sss_df)
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Process all collocated eddies and write missing pigment Parquet files."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     sst_dir = resolve_data_dir(cfg, "sst_dir")
     sss_dir = resolve_data_dir(cfg, "sss_dir")
@@ -139,4 +133,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

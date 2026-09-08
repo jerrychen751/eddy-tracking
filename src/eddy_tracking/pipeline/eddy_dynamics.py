@@ -4,10 +4,9 @@ Compute per-eddy dynamical diagnostics from SWOT.
 The DUACS/MIOST source variable is named relative_vorticity, but in the files used here it is not raw relative vorticity in s^-1. It is already normalized by the Coriolis parameter, so the stored quantity is Rossby number (Ro = zeta/f). Outputs one dynamics.parquet per polarity under silver/eddy_dynamics/.
 """
 
-import argparse
 import datetime as dt
+import sys
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -109,14 +108,8 @@ def write_dynamics(experiment: str, dynamics: pd.DataFrame) -> None:
         )
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Compute and write Rossby diagnostics for one experiment."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        args = parser.parse_args()
-        experiment = cast(str, args.experiment)
-
     cfg = load_config(experiment)
     swot_files = index_swot_files_by_date(resolve_data_dir(cfg, "swot_dir"))
     obs = load_track_observations(experiment)
@@ -129,4 +122,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])

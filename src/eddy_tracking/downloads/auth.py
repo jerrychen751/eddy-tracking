@@ -24,7 +24,7 @@ def login_earthdata() -> earthaccess.Auth:
 
 
 def configure_obdaac_opendap_auth() -> None:
-    """Write a .dodsrc under the system temp dir and point the DAPRCFILE env var at it, so netCDF4 authenticates to OB.DAAC OPeNDAP from ~/.netrc. The directory is private to this process and goes away at exit, because libcurl rewrites the whole cookie jar at handle cleanup and run_pipeline runs the PACE and the SST download stages at the same time."""
+    """Write a .dodsrc under the system temp dir and point the DAPRCFILE env var at it, so netCDF4 authenticates to OB.DAAC OPeNDAP from ~/.netrc. The directory is private to this process and goes away at exit, because libcurl rewrites the whole cookie jar at handle cleanup and the pipeline orchestrator runs the PACE and the SST download stages at the same time."""
     netrc_path = Path.home() / ".netrc"
     if not netrc_path.exists():
         raise FileNotFoundError(

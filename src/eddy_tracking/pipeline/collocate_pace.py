@@ -8,10 +8,9 @@ Temporal resolution is set via the collocate_pace config section:
   - "8D": for each 8-day composite, picks the eddy contour from the day closest to the window midpoint (since the Rrs is a temporal average)
 """
 
-import argparse
 import datetime as dt
+import sys
 from collections import defaultdict
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -76,13 +75,8 @@ def collocate_one_observation(
     )
 
 
-def main(experiment: str | None = None) -> None:
+def main(experiment: str) -> None:
     """Collocate PACE observations and write one Parquet file per tracked eddy."""
-    if experiment is None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("experiment")
-        experiment = cast(str, parser.parse_args().experiment)
-
     cfg = load_config(experiment)
     collocation_cfg = cfg["collocate_pace"]
     pace_dir = resolve_data_dir(cfg, "pace_dir")
@@ -254,4 +248,4 @@ def main(experiment: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])
