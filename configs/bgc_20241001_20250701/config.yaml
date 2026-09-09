@@ -57,6 +57,7 @@ eddy_track:
 
 collocate_pace:
   min_coverage: 0.8
+  max_radius: 2
 
   # Restrict to specific track IDs (omit to process all)
   # track_ids: [5, 12, 20]

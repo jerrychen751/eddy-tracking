@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Column order is positional: it must match the np.column_stack order in collocate_pace.py and the enumerate-insert loop in run_sdp.py.
 METADATA_COLS: list[str] = [
     "track_id", "date", "pixel_lon", "pixel_lat",
-    "center_lon", "center_lat", "coverage",
+    "center_lon", "center_lat", "radius_km", "inside_contour", "coverage",
 ]
 
 

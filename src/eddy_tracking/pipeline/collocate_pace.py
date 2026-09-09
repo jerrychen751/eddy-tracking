@@ -1,7 +1,7 @@
 """
 Collocate PACE L3 Rrs observations with tracked eddy contours.
 
-For each PACE file (daily or 8-day composite), finds all eddies that were detected during the observation period, extracts valid Rrs pixels within each eddy's contour, and writes per-eddy Parquet files.
+For each PACE file (daily or 8-day composite), finds all eddies that were detected during the observation period, extracts valid Rrs pixels within max_radius speed radii of each eddy's center or inside its contour, and writes per-eddy Parquet files.
 
 Temporal resolution is set via the collocate_pace config section:
   - "DAY" (default): exact date match between PACE file and eddy detection
@@ -31,6 +31,7 @@ from eddy_tracking.preprocess.tracks import (
     load_tracks,
     mask_pixels_inside_contour,
 )
+from eddy_tracking.utils.geography import calculate_dist_to_point
 from eddy_tracking.utils.subset import parse_date_range
 
 
@@ -38,12 +39,12 @@ def collocate_one_observation(
     lon: np.ndarray,
     lat: np.ndarray,
     rrs: np.ndarray,
-    contour_lon: np.ndarray,
-    contour_lat: np.ndarray,
+    eddy: EddyObs,
     min_coverage: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float] | None:
+    max_radius: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float] | None:
     """
-    Return valid Rrs pixels inside a contour when coverage meets the threshold, as (rrs, lon, lat, coverage).
+    Return valid Rrs pixels within max_radius speed radii of the eddy center or inside its contour when contour coverage meets the threshold, as (rrs, lon, lat, inside_contour, coverage).
 
     NASA L3 quality flags are already represented as NaN values in ``rrs``.
     """
@@ -53,17 +54,20 @@ def collocate_one_observation(
     grid_latitudes = latitude_grid.ravel()  # (n_lat, n_lon) -> (n_lat*n_lon,)
     flattened_rrs = rrs.reshape(n_grid_cells, -1)  # (n_lat, n_lon, n_wavelength) -> (n_lat*n_lon, n_wavelength)
 
-    inside_contour = mask_pixels_inside_contour(lon, lat, contour_lon, contour_lat).ravel()
+    inside_contour = mask_pixels_inside_contour(lon, lat, eddy.contour_lon, eddy.contour_lat).ravel()
+    distance_km = calculate_dist_to_point(
+        pd.Series(grid_longitudes), pd.Series(grid_latitudes), eddy.center_lon, eddy.center_lat,
+    ).to_numpy()
+    inside_disc = distance_km <= max_radius * eddy.radius_km
 
     finite_spectra = np.all(np.isfinite(flattened_rrs), axis=1)  # (n_lat*n_lon, n_wavelength) -> (n_lat*n_lon,)
-    valid_pixels = inside_contour & finite_spectra
+    valid_pixels = (inside_contour | inside_disc) & finite_spectra
 
     n_inside = int(np.sum(inside_contour))
     if n_inside == 0:
         return None
 
-    n_valid = int(np.sum(valid_pixels))
-    coverage = float(n_valid) / n_inside
+    coverage = float(np.sum(inside_contour & finite_spectra)) / n_inside
     if coverage < min_coverage:
         return None
 
@@ -71,6 +75,7 @@ def collocate_one_observation(
         flattened_rrs[valid_pixels],  # (n_lat*n_lon, n_wavelength) -> (n_valid, n_wavelength)
         grid_longitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
         grid_latitudes[valid_pixels],  # (n_lat*n_lon,) -> (n_valid,)
+        inside_contour[valid_pixels],
         coverage,
     )
 
@@ -81,6 +86,7 @@ def main(experiment: str) -> None:
     collocation_cfg = cfg["collocate_pace"]
     pace_dir = resolve_data_dir(cfg, "pace_dir")
     min_coverage = collocation_cfg["min_coverage"]
+    max_radius = collocation_cfg["max_radius"]
     configured_track_ids = collocation_cfg.get("track_ids")
     track_ids = set(configured_track_ids) if configured_track_ids else None
     temporal_resolution = collocation_cfg.get("temporal_resolution", "DAY")
@@ -179,17 +185,17 @@ def main(experiment: str) -> None:
                 longitudes,
                 latitudes,
                 rrs,
-                eddy.contour_lon,
-                eddy.contour_lat,
+                eddy,
                 min_coverage=min_coverage,
+                max_radius=max_radius,
             )
             if result is None:
                 continue
-            valid_rrs, valid_lon, valid_lat, coverage = result
+            valid_rrs, valid_lon, valid_lat, valid_inside, coverage = result
 
             n_pixels = len(valid_lon)
             days_since_pet_epoch = (representative_date - PET_EPOCH).days
-            # 7x (n_pixels,) + (n_pixels, n_wavelength) -> (n_pixels, 7 + n_wavelength), matching METADATA_COLS + rrs_columns.
+            # 9x (n_pixels,) + (n_pixels, n_wavelength) -> (n_pixels, 9 + n_wavelength), matching METADATA_COLS + rrs_columns.
             rows = np.column_stack(
                 [
                     np.full(n_pixels, eddy.track_id),
@@ -198,6 +204,8 @@ def main(experiment: str) -> None:
                     valid_lat,
                     np.full(n_pixels, eddy.center_lon),
                     np.full(n_pixels, eddy.center_lat),
+                    np.full(n_pixels, eddy.radius_km),
+                    valid_inside,
                     np.full(n_pixels, coverage),
                     valid_rrs,
                 ]
@@ -209,6 +217,7 @@ def main(experiment: str) -> None:
                 f"polarity: {eddy.polarity}\n"
                 f"track_id: {eddy.track_id}\n"
                 f"pixels: {n_pixels}\n"
+                f"interior_pixels: {int(valid_inside.sum())}\n"
                 f"coverage: {coverage:.2f}"
             )
 
@@ -221,9 +230,10 @@ def main(experiment: str) -> None:
 
     n_written = 0
     for (track_id, polarity), row_chunks in sorted(rows_by_eddy.items()):
-        # list of (n_pixels_i, 7 + n_wavelength) -> (sum_i n_pixels_i, 7 + n_wavelength)
+        # list of (n_pixels_i, 9 + n_wavelength) -> (sum_i n_pixels_i, 9 + n_wavelength)
         observations = pd.DataFrame(np.vstack(row_chunks), columns=columns)  # pyright: ignore[reportArgumentType]
         observations["track_id"] = observations["track_id"].astype(int)
+        observations["inside_contour"] = observations["inside_contour"].astype(bool)
         observations["date"] = (
             pd.Timestamp("1950-01-01")
             + pd.to_timedelta(observations["date"], unit="D")  # pyright: ignore[reportArgumentType, reportCallIssue]

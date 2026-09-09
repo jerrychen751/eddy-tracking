@@ -77,7 +77,8 @@ def iter_eddy_files(experiment: str) -> Iterator[tuple[Path, pd.DataFrame]]:
             f"pigment_dir: {pig_dir}"
         )
         for fp in files:
-            yield fp, pd.read_parquet(fp)
+            df = pd.read_parquet(fp)
+            yield fp, df.loc[df["inside_contour"]]
 
 
 def get_pigment_cols(df: pd.DataFrame) -> list[str]:

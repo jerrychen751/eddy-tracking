@@ -39,8 +39,9 @@ def read_eddy_pixels(experiment: str) -> pd.DataFrame:
         pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
         for path in sorted(pigment_dir.glob("*_pigments.parquet")):
             frame = pd.read_parquet(
-                path, columns=["track_id", "date", "pixel_lon", "pixel_lat"]
+                path, columns=["track_id", "date", "pixel_lon", "pixel_lat", "inside_contour"]
             )
+            frame = frame.loc[frame["inside_contour"]].drop(columns="inside_contour")
             frame["polarity"] = polarity_value
             frames.append(frame)
     pixels = pd.concat(frames, ignore_index=True)

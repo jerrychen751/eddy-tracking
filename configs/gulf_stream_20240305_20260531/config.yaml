@@ -87,6 +87,7 @@ collocate_plankton:
 
 collocate_pace:
   min_coverage: 0.8
+  max_radius: 2
   temporal_resolution: "8D"
 
   # Keep only eddy-days within the PACE and SSH overlap. Eddies are tracked over the earlier

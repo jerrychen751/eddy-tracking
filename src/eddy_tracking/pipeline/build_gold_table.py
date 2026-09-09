@@ -25,6 +25,7 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
         pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
         for pigment_path in sorted(pigment_dir.glob("*_pigments.parquet")):
             pigments = pd.read_parquet(pigment_path)
+            pigments = pigments.loc[pigments["inside_contour"]]
             for date, group in pigments.groupby("date"):
                 row = {
                     "track_id": int(group["track_id"].iloc[0]),

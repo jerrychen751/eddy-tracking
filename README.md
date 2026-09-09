@@ -6,7 +6,7 @@ Research pipeline for Gulf Stream eddy tracks and PACE OCI chlorophyll, pigment,
 
 CHL denotes near-surface chlorophyll-a concentration. The current questions concern CHL change with eddy age, radial pigment composition, and evidence for lateral exchange in southbound cyclones and northbound anticyclones. The [research scope](docs/research_scope.md) defines the hypotheses, source-water distinctions, verified pipeline capability, and evidence requirements.
 
-The paragraph and figure plan is in the Obsidian note `Work Vault/Work/1. GT Oceanography Lab/Manuscript Planning.md`. The current pipeline supplies interior pigment estimates. The proposed paper also needs exterior radial observations, local reference water, and cohort validation.
+The paragraph and figure plan is in the Obsidian note `Work Vault/Work/1. GT Oceanography Lab/Manuscript Planning.md`. The current pipeline supplies interior pigment estimates and per-pixel pigment retrievals out to `collocate_pace.max_radius` speed radii of each eddy center. The proposed paper also needs local reference water and cohort validation.
 
 ## Overview
 
