@@ -37,7 +37,7 @@ class GulfStreamCenterline:
         """
         Trace the Gulf Stream core by following the local surface-current direction.
 
-        Starts at the cell with the strongest local-average flow, traces downstream and upstream, allows short slow gaps, trims weak tails, and stops at the grid edge, land, or a curl back onto an earlier part of the path.
+        Starts at the fastest cell inside the box with the strongest local-average flow, traces downstream and upstream, allows short slow gaps, trims weak tails, and stops at the grid edge, land, or a curl back onto an earlier part of the path.
         """
         speed = np.hypot(ugos, vgos)
         if not np.any(np.isfinite(speed)):
@@ -47,7 +47,7 @@ class GulfStreamCenterline:
         u_at = RegularGridInterpolator((lat, lon), ugos, bounds_error=False, fill_value=np.nan)
         v_at = RegularGridInterpolator((lat, lon), vgos, bounds_error=False, fill_value=np.nan)
 
-        # Seed from the strongest *coherent* flow rather than the single fastest pixel: the cell with the highest mean speed over a fully-finite seed_window box.
+        # Seed from the strongest *coherent* flow rather than the single fastest pixel: the fastest cell inside the fully-finite seed_window box with the highest mean speed.
         # This avoids lone coastal spikes whose NaN neighbours would make the interpolator return NaN at the seed and end the trace on its first step.
         seed_window = 5  # box width (cells) for the coherent-flow seed; ~70 km at 1/8 deg
         finite = np.isfinite(speed)
@@ -58,9 +58,17 @@ class GulfStreamCenterline:
         if seed_score.max() <= 0:
             return cls(np.array([]), np.array([]))
         # flat argmax over seed_score (n_lat, n_lon) -> (lat_idx, lon_idx)
-        origin_lat_idx, origin_lon_idx = np.unravel_index(
+        window_lat_idx, window_lon_idx = np.unravel_index(
             np.argmax(seed_score), speed.shape
         )
+        half_window = seed_window // 2
+        window = speed[
+            window_lat_idx - half_window:window_lat_idx + half_window + 1,
+            window_lon_idx - half_window:window_lon_idx + half_window + 1,
+        ]
+        fastest_lat_idx, fastest_lon_idx = np.unravel_index(np.argmax(window), window.shape)
+        origin_lat_idx = window_lat_idx - half_window + fastest_lat_idx
+        origin_lon_idx = window_lon_idx - half_window + fastest_lon_idx
         # origin, point, and every path row are (2,) holding (lat, lon) in degrees.
         origin = np.array(
             [lat[origin_lat_idx], lon[origin_lon_idx]], dtype=float
