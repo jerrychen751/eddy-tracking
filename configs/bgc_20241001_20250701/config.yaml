@@ -42,6 +42,7 @@ eddy_id:
 
   step: 0.004 # SSH contour step (m)
   shape_error: 55 # max % deviation from circle
+  min_amplitude: 0.008
 
 eddy_track:
   # Max consecutive missed days before breaking a track

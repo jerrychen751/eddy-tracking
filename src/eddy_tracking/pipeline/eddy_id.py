@@ -41,6 +41,7 @@ def identify_one(
     bessel_wavelength: float,
     contour_step: float,
     shape_error: int,
+    min_amplitude: float,
 ) -> tuple[Path, Path]:
     """
     Identify eddies in a single SWOT L4 SSH file.
@@ -91,6 +92,7 @@ def identify_one(
         date=date,
         step=contour_step,
         shape_error=shape_error,
+        nb_step_min=min_amplitude / contour_step,
     )
     if not isinstance(anticyclones, EddiesObservations) or not isinstance(
         cyclones, EddiesObservations
@@ -114,6 +116,7 @@ def main(experiment: str) -> None:
     bessel_wavelength = cfg["eddy_id"]["bessel_high_filter_wavelength"]
     contour_step = cfg["eddy_id"]["step"]
     shape_error = cfg["eddy_id"]["shape_error"]
+    min_amplitude = cfg["eddy_id"]["min_amplitude"]
 
     swot_files = index_swot_files_by_date(swot_dir)
     if not swot_files:
@@ -144,6 +147,7 @@ def main(experiment: str) -> None:
                 bessel_wavelength,
                 contour_step,
                 shape_error,
+                min_amplitude,
             )
             futures[future] = input_path
 
