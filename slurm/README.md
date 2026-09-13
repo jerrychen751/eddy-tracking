@@ -1,64 +1,44 @@
-# Slurm job scripts
+# Slurm job script
 
-HPC Slurm job scripts for running the pigment branch of the
-eddy-tracking pipeline on PACE Phoenix. The local `python -m eddy_tracking.pipeline` runner now runs
-the full gold-table path; these Slurm scripts do not yet submit `gulf_stream`,
-`eddy_dynamics`, `background`, or `build_gold_table`.
-All jobs use `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
+One Slurm job script, `pipeline.sbatch`, runs `python -m eddy_tracking.pipeline` on PACE Phoenix with the arguments you pass to `sbatch`, so it covers every stage the local runner covers, from the downloads to `build_gold_table`.
+It submits with `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
 `inferno` is the default charged QOS; switch to `--qos=embers` for free but preemptible backfill.
 
 ## Prerequisites
 
 - Place the repo at `~/projects/eddy-tracking/`, then build the env with `uv sync --no-dev`.
-- Each script activates the uv virtual environment with `cd ~/projects/eddy-tracking && source .venv/bin/activate` (no conda).
+- The script activates the uv virtual environment with `cd ~/projects/eddy-tracking && source .venv/bin/activate` (no conda).
 - Point `data/` at scratch, not the 20 GB home dir (the group project space is currently full): `ln -sfn ~/scratch/eddy-data ~/projects/eddy-tracking/data`. Scratch is 15 TB but purges files untouched for 60 days, so copy the small gold parquet to home for long-term keeping.
+- Create `logs/` in the project root, because Slurm opens the log file before the script runs.
 - Create a `.env` in the project root with `FTP_HOST`, `FTP_USER`, `FTP_PASSWORD`, and ensure `~/.netrc` has Earthdata credentials, before running the download stages.
 
 ## How to submit
 
 ```bash
-# Submit the pigment branch for an experiment
-EXPERIMENT=gulf_stream_20240305_20260531 bash slurm/submit_pipeline.sh gulf_stream_20240305_20260531
+# Every stage for an experiment
+sbatch slurm/pipeline.sbatch gulf_stream_20240305_20260531
 
 # Resume from a specific stage (e.g., if eddy_id already ran)
-bash slurm/submit_pipeline.sh gulf_stream_20240305_20260531 --from eddy_track
+sbatch slurm/pipeline.sbatch gulf_stream_20240305_20260531 --from eddy_track
+
+# An explicit subset, with more cores and a shorter limit than the script's defaults
+sbatch --cpus-per-task=16 --time=04:00:00 slurm/pipeline.sbatch gulf_stream_20240305_20260531 run_sdp
 ```
 
-`submit_pipeline.sh` submits download stages in parallel (no mutual dependencies), then chains all subsequent pigment stages with `--dependency=afterok` so each stage only starts after the previous one succeeds.
+The stages run one after another inside the job, in the order of the local runner, and the job stops at the first stage that fails.
 
-## Stage resource summary
+## Resources
 
-| Stage | CPUs | Memory | Wall time | Notes |
-|-------|------|--------|-----------|-------|
-| `download_swot` | 4 | 8 GB | 6 h | I/O-bound; FTP parallel downloads |
-| `download_pace` | 4 | 16 GB | 12 h | I/O-bound; HTTPS via earthaccess |
-| `download_sst_sss` | 4 | 8 GB | 6 h | Harmony API + earthaccess |
-| `download_cmems` | 2 | 8 GB | 8 h | I/O-bound; Copernicus Marine toolbox, about 90 s per month |
-| `eddy_id` | 12 | 32 GB | 6 h | CPU-bound; ProcessPoolExecutor |
-| `eddy_track` | 4 | 16 GB | 2 h | Single-threaded PET tracking |
-| `collocate_pace` | 4 | 32 GB | 4 h | Per-date spatial join |
-| `run_sdp` | 8 | 32 GB | 12 h | GSM inversion + pigment ensemble |
-
-## Job dependency chain
-
-```
-download_swot ─┐
-download_pace ─┼─→ eddy_id → eddy_track → collocate_pace → run_sdp
-download_sst_sss ┤
-download_cmems ┘
-```
-
-The four download stages have no mutual dependency and run simultaneously. The `EXPERIMENT` variable is passed via `--export=ALL,EXPERIMENT=<name>` and validated inside each script with `: "${EXPERIMENT:?...}"`.
+The script asks for 8 CPUs, 32 GB, and 12 hours, which covers `run_sdp`, the slowest stage. An `sbatch` flag overrides the matching `#SBATCH` line. The parallel stages take their worker count from the `max_workers` keys of the experiment config (`eddy_id` and `run_sdp`), so request at least that many CPUs.
 
 ## Monitoring
 
 ```bash
 squeue -u $USER
-tail -f logs/<stage>_<jobid>.log
+tail -f logs/pipeline_<jobid>.log
 ```
 
 ## Troubleshooting
 
-- **Job stuck in `PD (dependency)`**: a parent job failed. Check `squeue --jobs <parent_jid>` and the parent's log.
-- **OOM kill**: increase `--mem` in the relevant `.sbatch`.
+- **OOM kill**: resubmit with a larger `--mem`.
 - **earthaccess auth failure**: ensure `~/.netrc` is configured on the compute node (earthaccess writes credentials there after first login).

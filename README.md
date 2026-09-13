@@ -200,21 +200,16 @@ uv run python -m eddy_tracking.pipeline <experiment> eddy_dynamics background bu
 
 ## HPC (PACE Phoenix cluster)
 
-Slurm scripts are in `slurm/`.
-The `submit_pipeline.sh` script runs through pigment retrieval. It
-does not currently submit the gold-table stages
-(`gulf_stream`, `eddy_dynamics`, `background`, `build_gold_table`).
+One Slurm script, `slurm/pipeline.sbatch`, runs `python -m eddy_tracking.pipeline` with whatever arguments follow it, so it covers the same stages as the local runner. The experiment name is the first argument, for example `gulf_stream_20240305_20260531`.
 
 ```bash
 # On the Phoenix login node (GT VPN required):
-export EXPERIMENT=<experiment>   # e.g. gulf_stream_20240305_20260531
-bash slurm/submit_pipeline.sh "$EXPERIMENT"
+sbatch slurm/pipeline.sbatch <experiment>
+sbatch slurm/pipeline.sbatch <experiment> --from run_sdp
 ```
 
-Each sbatch script requires `$EXPERIMENT` to be set via `sbatch --export` or the submit script.
-
-The `slurm/` scripts activate the uv venv (`source .venv/bin/activate`) and submit with `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
-Before a real run, point `data/` at scratch (`ln -sfn ~/scratch/eddy-data ~/projects/eddy-tracking/data`), since home is only 20 GB, and stage `.env` + `~/.netrc` for the download stages.
+The script activates the uv venv (`source .venv/bin/activate`) and submits with `--account=gts-ldove6 --partition=cpu-small --qos=inferno`.
+Before a real run, point `data/` at scratch (`ln -sfn ~/scratch/eddy-data ~/projects/eddy-tracking/data`), since home is only 20 GB, create `logs/`, and stage `.env` + `~/.netrc` for the download stages.
 See `slurm/README.md` for details.
 
 ## Directory structure
@@ -240,7 +235,7 @@ src/eddy_tracking/
                   vendored eddy identification and tracking package
 scripts/          analysis scripts that read the pipeline outputs
 notebooks/        exploratory analysis
-slurm/            HPC job scripts
+slurm/            HPC job script
 docs/             current research scope and evidence requirements
 archive/          old single-eddy analysis outputs
 ```
