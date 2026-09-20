@@ -132,7 +132,7 @@ class GulfStreamCenterline:
         return cls(path[:, 1], path[:, 0])
 
 
-def trace_streamline_for_file(fp: Path) -> GulfStreamCenterline:
+def trace_streamline_for_file(fp: Path, lat_band: tuple[float, float]) -> GulfStreamCenterline:
     """Ordered Gulf Stream streamline for one SWOT day."""
     with xr.open_dataset(fp) as ds:
         if "time" in ds.ugos.dims:
@@ -144,8 +144,7 @@ def trace_streamline_for_file(fp: Path) -> GulfStreamCenterline:
         vgos = ds.vgos.to_numpy()
 
     # The Gulf Stream core stays well inside this latitude band within the ROI; restricting the search keeps the line off coastal/subpolar currents.
-    gs_lat_band = (32.0, 43.0)
-    in_band = (lat >= gs_lat_band[0]) & (lat <= gs_lat_band[1])
+    in_band = (lat >= lat_band[0]) & (lat <= lat_band[1])
     # in_band (n_lat,) -> (n_lat, 1) to broadcast down each column of ugos and vgos (n_lat, n_lon)
     ugos = np.where(in_band[:, np.newaxis], ugos, np.nan)
     vgos = np.where(in_band[:, np.newaxis], vgos, np.nan)

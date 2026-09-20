@@ -24,6 +24,7 @@ def main(experiment: str) -> None:
     """Trace daily streamlines and write streamline and movement Parquet files."""
     cfg = load_config(experiment)
     swot_dir = resolve_data_dir(cfg, "swot_dir")
+    lat_band = tuple(cfg["gulf_stream"]["lat_band"])
     out_dir = resolve_output_dir(experiment, "gulf_stream")
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -35,7 +36,7 @@ def main(experiment: str) -> None:
     streamline_rows = []
     centerline_by_date: dict[dt.date, GulfStreamCenterline] = {}
     for date, fp in sorted(swot_files.items()):
-        centerline = trace_streamline_for_file(fp)
+        centerline = trace_streamline_for_file(fp, lat_band)
         centerline_by_date[date] = centerline
         streamline_rows.append(pd.DataFrame({
             "date": pd.Timestamp(date),

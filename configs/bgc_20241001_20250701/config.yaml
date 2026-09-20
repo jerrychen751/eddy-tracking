@@ -23,6 +23,10 @@ base:
     swot:
       ftp_dir: "swot_products/l4_karin_nadir/v2_0_1/miost/science"
       max_workers: 2
+      filter_open_ocean: false
+      exclude_box:
+        lon_range: [-81, -75]
+        lat_range: [40, 44]
 
     pace:
       temporal_resolution: "DAY"
@@ -62,3 +66,6 @@ collocate_pace:
 
   # Restrict to specific track IDs (omit to process all)
   # track_ids: [5, 12, 20]
+
+gulf_stream:
+  lat_band: [32, 43]

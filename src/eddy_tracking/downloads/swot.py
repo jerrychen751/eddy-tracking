@@ -35,6 +35,8 @@ class DownloadSettings:
     longitude_range: tuple[float, float]
     latitude_range: tuple[float, float]
     filter_open_ocean: bool
+    exclude_lon_range: tuple[float, float]
+    exclude_lat_range: tuple[float, float]
 
 
 def load_settings(experiment: str) -> DownloadSettings:
@@ -50,9 +52,9 @@ def load_settings(experiment: str) -> DownloadSettings:
         date_range=tuple(cfg["base"]["time"]["eddy_date_range"]),
         longitude_range=tuple(cfg["base"]["region"]["lon_range"]),
         latitude_range=tuple(cfg["base"]["region"]["lat_range"]),
-        filter_open_ocean=cfg["base"]["download"]["swot"].get(
-            "filter_open_ocean", False
-        ),
+        filter_open_ocean=cfg["base"]["download"]["swot"]["filter_open_ocean"],
+        exclude_lon_range=tuple(cfg["base"]["download"]["swot"]["exclude_box"]["lon_range"]),
+        exclude_lat_range=tuple(cfg["base"]["download"]["swot"]["exclude_box"]["lat_range"]),
     )
 
 
@@ -77,12 +79,14 @@ def filter_by_date_range(
     return filtered_files
 
 
-def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
-    """Mask invalid cells, their eight-cell coast buffer, and the Great Lakes."""
+def mask_open_ocean(
+    dataset: xr.Dataset,
+    exclude_lon_range: tuple[float, float],
+    exclude_lat_range: tuple[float, float],
+) -> xr.Dataset:
+    """Mask invalid cells, their eight-cell coast buffer, and the configured exclusion box."""
     swot_validity_fields = ("adt", "ugos", "vgos", "relative_vorticity")
     coast_min_distance_pixels = 8
-    great_lakes_lon_range = (-81, -75)
-    great_lakes_lat_range = (40, 44)
 
     surface = dataset
     if "time" in surface["adt"].dims:
@@ -98,14 +102,14 @@ def mask_open_ocean(dataset: xr.Dataset) -> xr.Dataset:
     longitude = surface["longitude"].to_numpy()
     latitude = surface["latitude"].to_numpy()
     # longitude (n_lon,) -> (1, n_lon) and latitude (n_lat,) -> (n_lat, 1) broadcast to (n_lat, n_lon)
-    in_great_lakes = (
-        (longitude[np.newaxis, :] >= great_lakes_lon_range[0])
-        & (longitude[np.newaxis, :] <= great_lakes_lon_range[1])
-        & (latitude[:, np.newaxis] >= great_lakes_lat_range[0])
-        & (latitude[:, np.newaxis] <= great_lakes_lat_range[1])
+    in_exclude_box = (
+        (longitude[np.newaxis, :] >= exclude_lon_range[0])
+        & (longitude[np.newaxis, :] <= exclude_lon_range[1])
+        & (latitude[:, np.newaxis] >= exclude_lat_range[0])
+        & (latitude[:, np.newaxis] <= exclude_lat_range[1])
     )
     keep = xr.DataArray(
-        coast_ok & ~in_great_lakes,
+        coast_ok & ~in_exclude_box,
         coords={"latitude": surface["latitude"], "longitude": surface["longitude"]},
         dims=("latitude", "longitude"),
     )
@@ -143,6 +147,8 @@ def _download_one(remote_path: str, settings: DownloadSettings) -> str:
                 settings.longitude_range,
                 settings.latitude_range,
                 settings.filter_open_ocean,
+                settings.exclude_lon_range,
+                settings.exclude_lat_range,
             )
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
@@ -164,6 +170,8 @@ def _trim_file(
     longitude_range: tuple[float, float],
     latitude_range: tuple[float, float],
     filter_open_ocean: bool,
+    exclude_lon_range: tuple[float, float],
+    exclude_lat_range: tuple[float, float],
 ) -> None:
     """Install a trimmed output through a temporary file, then delete the raw input."""
     temporary_path = out_path.with_suffix(".tmp.nc")
@@ -174,7 +182,7 @@ def _trim_file(
                 latitude=slice(*latitude_range),
             )
             if filter_open_ocean:
-                trimmed = mask_open_ocean(trimmed)
+                trimmed = mask_open_ocean(trimmed, exclude_lon_range, exclude_lat_range)
             trimmed.to_netcdf(temporary_path)
         temporary_path.replace(out_path)
     except Exception:

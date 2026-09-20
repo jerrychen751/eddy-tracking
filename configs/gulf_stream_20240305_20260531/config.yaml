@@ -37,6 +37,9 @@ base:
       ftp_dir: "swot_products/l4_karin_nadir/v3_0/miost"
       max_workers: 8
       filter_open_ocean: true
+      exclude_box:
+        lon_range: [-81, -75]
+        lat_range: [40, 44]
 
     pace:
       temporal_resolution: "8D"
@@ -100,3 +103,6 @@ collocate_pace:
 
 run_sdp:
   max_workers: 4
+
+gulf_stream:
+  lat_band: [32, 43]
