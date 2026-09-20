@@ -61,6 +61,8 @@ Each experiment has a config directory under `configs/<experiment>/`:
 configs/
   gulf_stream_20240305_20260531/
     config.yaml # all stage settings in one file, keyed by section: base (region, dates, data paths), eddy_id, eddy_track, collocate_pace
+  kuroshio_20240305_20260531/
+    config.yaml # the same settings over the Kuroshio Extension, lon [135, 160] and lat [29, 44]
 ```
 
 Data is organized in a bronze/silver/gold (medallion) layout: `bronze/` is raw
