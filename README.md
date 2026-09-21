@@ -18,7 +18,7 @@ The pipeline uses daily DUACS-MIOST Level 4 sea surface height (SSH), which comb
 - PACE OCI L3 mapped BGC: direct CHL source (`chlor_a`); `collocate_chlorophyll.py` validates inputs and calculates eddy means without SDP
 - SST: AQUA MODIS 8-day composites via earthaccess search and OPeNDAP
 - SSS: SMAP 8-day running mean via Harmony API
-- Copernicus Marine daily L3 plankton, 4 km, multi-sensor GlobColour processing (`cmems_obs-oc_glo_bgc-plankton_my_l3-multi-4km_P1D`): CHL plus nine phytoplankton group concentrations, each with an uncertainty field; `collocate_plankton.py` builds 8-day eddy means of every concentration and uncertainty field over the whole tracking window
+- Copernicus Marine daily L3 plankton, 4 km, multi-sensor GlobColour processing (`cmems_obs-oc_glo_bgc-plankton_my_l3-multi-4km_P1D`): CHL plus nine phytoplankton group concentrations, each with an uncertainty field; `collocate_plankton.py` builds 8-day eddy means of every concentration and uncertainty field over the whole tracking date range
 
 ## Setup
 

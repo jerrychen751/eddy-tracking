@@ -13,10 +13,10 @@ base:
     lat_range: [29, 44]
 
   time:
-    # SWOT SSH window for eddy detection/tracking. Starts ~11 months before the PACE
-    # window so eddy births are observed and age_frac is not truncated at the edge.
+    # SWOT SSH date range for eddy detection/tracking. Starts ~11 months before the PACE
+    # date range so eddy births are observed and age_frac is not truncated at the edge.
     eddy_date_range: ["2023-03-28", "2025-12-31"]
-    # PACE Rrs + ancillary window: earliest PACE composite through May 2026.
+    # PACE Rrs + ancillary date range: earliest PACE composite through May 2026.
     rrs_date_range: ["2024-03-05", "2026-05-31"]
 
   # Paths resolve to data/<dataset>/<dir>/

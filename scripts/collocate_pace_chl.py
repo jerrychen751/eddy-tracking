@@ -70,7 +70,7 @@ def collocate_chlor_a(
     data_dir = PROJECT_ROOT / "data" / experiment
     bgc_dir = data_dir / "bronze" / "pace_l3_8d_bgc"
     rrs_dir = data_dir / "bronze" / "pace_l3_8d"
-    # Group 1 is the window start and group 2 the window end: PACE_OCI.20240929_20241006.L3m.8D.BGC.V3_2.4km.nc
+    # Group 1 is the date range start and group 2 the date range end: PACE_OCI.20240929_20241006.L3m.8D.BGC.V3_2.4km.nc
     bgc_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.BGC\.")
     rrs_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
     swot_files = index_swot_files_by_date(data_dir / "bronze" / "swot_l4_open_ocean")
@@ -84,11 +84,11 @@ def collocate_chlor_a(
         f"dates: {pixels['date'].nunique()}"
     )
 
-    rrs_by_window = {}
+    rrs_by_date_range = {}
     for path in sorted(rrs_dir.glob("*.nc")):
         match = rrs_re.search(path.name)
         if match:
-            rrs_by_window[f"{match.group(1)}_{match.group(2)}"] = path
+            rrs_by_date_range[f"{match.group(1)}_{match.group(2)}"] = path
 
     def compute_means(values: np.ndarray, prefix: str) -> dict[str, float]:
         summary = {f"{prefix}_chl_mean": float(values.mean())}
@@ -101,11 +101,11 @@ def collocate_chlor_a(
         match = bgc_re.search(bgc_path.name)
         if match is None:
             continue
-        win_start = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
-        win_end = dt.datetime.strptime(match.group(2), "%Y%m%d").date()
-        # The window midpoint is the same join key collocate_pace and background write, so chlorophyll rows land on the gold table's dates.
-        repr_date = win_start + (win_end - win_start) / 2
-        window_key = f"{win_start:%Y%m%d}_{win_end:%Y%m%d}"
+        date_range_start = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
+        date_range_end = dt.datetime.strptime(match.group(2), "%Y%m%d").date()
+        # The date range midpoint is the same join key collocate_pace and background write, so chlorophyll rows land on the gold table's dates.
+        repr_date = date_range_start + (date_range_end - date_range_start) / 2
+        date_range_key = f"{date_range_start:%Y%m%d}_{date_range_end:%Y%m%d}"
 
         with xr.open_dataset(bgc_path) as bgc:
             chlor_a = bgc["chlor_a"].load()
@@ -113,7 +113,7 @@ def collocate_chlor_a(
         pace_lat = chlor_a["lat"].values
 
         # SDP kept only pixels with a finite spectrum in every band, so apply the same rule here and the two pixel sets stay comparable.
-        with xr.open_dataset(rrs_by_window[window_key]) as rrs_ds:
+        with xr.open_dataset(rrs_by_date_range[date_range_key]) as rrs_ds:
             rrs_finite = np.all(np.isfinite(rrs_ds["Rrs"].values), axis=-1) # (n_lat, n_lon, n_wavelengths) -> (n_lat, n_lon)
         usable = xr.DataArray(
             np.isfinite(chlor_a.values) & rrs_finite,
@@ -166,15 +166,15 @@ def collocate_chlor_a(
             )
             continue
 
-        window_contours = []
-        day = win_start
-        while day <= win_end:
-            window_contours.extend((eddy.contour_lon, eddy.contour_lat) for eddy in date_index.get(day, []))
+        date_range_contours = []
+        day = date_range_start
+        while day <= date_range_end:
+            date_range_contours.extend((eddy.contour_lon, eddy.contour_lat) for eddy in date_index.get(day, []))
             day += dt.timedelta(days=1)
-        if window_contours:
+        if date_range_contours:
             # ravel()[candidate]: (n_lat, n_lon) -> (n_lat * n_lon,) -> (n_candidate,)
             inside = is_in_any_contour(
-                window_contours, lon_grid.ravel()[candidate], lat_grid.ravel()[candidate]
+                date_range_contours, lon_grid.ravel()[candidate], lat_grid.ravel()[candidate]
             )
             candidate = candidate[~inside]
         if candidate.size == 0:

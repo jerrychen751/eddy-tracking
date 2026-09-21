@@ -5,7 +5,7 @@ For each PACE file (daily or 8-day composite), finds all eddies that were detect
 
 Temporal resolution is set via the collocate_pace config section:
   - "DAY" (default): exact date match between PACE file and eddy detection
-  - "8D": for each 8-day composite, picks the eddy contour from the day closest to the window midpoint (since the Rrs is a temporal average)
+  - "8D": for each 8-day composite, picks the eddy contour from the day closest to the date range midpoint (since the Rrs is a temporal average)
 """
 
 import datetime as dt
@@ -22,12 +22,12 @@ from eddy_tracking.config import (
     resolve_data_dir,
     resolve_output_dir,
 )
-from eddy_tracking.preprocess.pace import parse_pace_window
+from eddy_tracking.preprocess.pace import parse_fn_for_date_range
 from eddy_tracking.preprocess.tracks import (
     PET_EPOCH,
     EddyObs,
     build_date_eddy_index,
-    collect_eddies_for_window,
+    collect_eddies_for_date_range,
     load_tracks,
     mask_pixels_inside_contour,
 )
@@ -155,12 +155,12 @@ def main(experiment: str) -> None:
     n_matched_files = 0
 
     for pace_path in pace_files:
-        window = parse_pace_window(pace_path.name, temporal_resolution)
-        if window is None:
+        composite_date_range = parse_fn_for_date_range(pace_path.name, temporal_resolution)
+        if composite_date_range is None:
             continue
-        representative_date, window_start, window_end = window
-        matched_eddies = collect_eddies_for_window(date_index, window_start, window_end)
-        date_label = f"{window_start}..{window_end}" if window_start != window_end else str(window_start)
+        representative_date, date_range_start, date_range_end = composite_date_range
+        matched_eddies = collect_eddies_for_date_range(date_index, date_range_start, date_range_end)
+        date_label = f"{date_range_start}..{date_range_end}" if date_range_start != date_range_end else str(date_range_start)
 
         if not matched_eddies:
             continue
@@ -213,7 +213,7 @@ def main(experiment: str) -> None:
             rows_by_eddy[(eddy.track_id, eddy.polarity)].append(rows)
 
             print(
-                f"date_window: {date_label}\n"
+                f"date_range: {date_label}\n"
                 f"polarity: {eddy.polarity}\n"
                 f"track_id: {eddy.track_id}\n"
                 f"pixels: {n_pixels}\n"

@@ -84,12 +84,12 @@ def build_date_eddy_index(
     return date_index
 
 
-def collect_eddies_for_window(
+def collect_eddies_for_date_range(
     date_index: dict[dt.date, list["EddyObs"]],
     start: dt.date,
     end: dt.date,
 ) -> list["EddyObs"]:
-    """Select each eddy's observation nearest an 8-day window midpoint."""
+    """Select each eddy's observation nearest an 8-day date range midpoint."""
     midpoint = start + (end - start) / 2
     best: dict[tuple[int, str], tuple[EddyObs, float]] = {}
 

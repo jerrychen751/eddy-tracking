@@ -63,7 +63,7 @@ def download_cmems_dataset(
 
 
 def main(experiment: str) -> None:
-    """Download the months of the plankton dataset that cover the eddy tracking window of the experiment."""
+    """Download the months of the plankton dataset that cover the eddy tracking date range of the experiment."""
     cfg = load_config(experiment)
     n_saved = download_cmems_dataset(
         date_range=tuple(cfg["base"]["time"]["eddy_date_range"]),

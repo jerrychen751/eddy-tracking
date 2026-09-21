@@ -18,7 +18,7 @@ def read_multiple_sss(fps: Sequence[Path | str]) -> pd.DataFrame:
 
     arrays = []
     for f in files:
-        # "SMAP_L3_SSS_20250114_8DAYS_V5.0.nc" carries the center date of its 8-day window.
+        # "SMAP_L3_SSS_20250114_8DAYS_V5.0.nc" carries the center date of its 8-day date range.
         match = re.search(r"SSS_(\d{8})_", f.name)
         if not match:
             raise ValueError(f"Cannot parse SSS date from: {f.name}")

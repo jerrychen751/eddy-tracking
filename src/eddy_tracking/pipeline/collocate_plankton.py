@@ -1,4 +1,4 @@
-"""Build the gold table of Copernicus Marine plankton field means inside each tracked eddy, one row per eddy and 8-day composite window."""
+"""Build the gold table of Copernicus Marine plankton field means inside each tracked eddy, one row per eddy and 8-day composite date range."""
 
 import datetime as dt
 import sys
@@ -14,7 +14,7 @@ from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_data_dir, re
 from eddy_tracking.preprocess.tracks import (
     EddyObs,
     build_date_eddy_index,
-    collect_eddies_for_window,
+    collect_eddies_for_date_range,
     load_tracks,
     mask_pixels_inside_contour,
 )
@@ -22,7 +22,7 @@ from eddy_tracking.preprocess.tracks import (
 
 def build_plankton_table(experiment: str) -> pd.DataFrame:
     """
-    Return one row per tracked eddy and NASA 8-day period over the eddy tracking window of the experiment. Each period starts on day 1 of the year and every eighth day after it, and the last period of a year ends on December 31. A pixel's composite is its mean over the days of the period with data, and each field mean covers the composite pixels inside the eddy boundary nearest the period midpoint that hold that field. The uncertainty of a field averages over the same pixels as the field. A row needs CHL on at least collocate_plankton.min_coverage of the interior pixels and on at least min_pixels of them; the other fields may have fewer pixels, down to zero, which leaves their mean absent. The flags field only marks land, so it is not aggregated. Concentrations are in mg/m³, uncertainties in percent, and date is the period midpoint.
+    Return one row per tracked eddy and NASA 8-day period over the eddy tracking date range of the experiment. Each period starts on day 1 of the year and every eighth day after it, and the last period of a year ends on December 31. A pixel's composite is its mean over the days of the period with data, and each field mean covers the composite pixels inside the eddy boundary nearest the period midpoint that hold that field. The uncertainty of a field averages over the same pixels as the field. A row needs CHL on at least collocate_plankton.min_coverage of the interior pixels and on at least min_pixels of them; the other fields may have fewer pixels, down to zero, which leaves their mean absent. The flags field only marks land, so it is not aggregated. Concentrations are in mg/m³, uncertainties in percent, and date is the period midpoint.
     """
     cfg = load_config(experiment)
     settings = cfg["collocate_plankton"]
@@ -32,13 +32,13 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
     for polarity in ("cyclone", "anticyclone"):
         for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity, date_range=(first_day, last_day)).items():
             date_index[day].extend(eddies)
-    windows = []
+    date_ranges = []
     for year in range(first_day.year, last_day.year + 1):
         start = dt.date(year, 1, 1)
         while start.year == year:
             end = min(start + dt.timedelta(days=7), dt.date(year, 12, 31))
             if end >= first_day and start <= last_day:
-                windows.append((start, end))
+                date_ranges.append((start, end))
             start = end + dt.timedelta(days=1)
     concentrations = ["CHL", "DIATO", "DINO", "GREEN", "HAPTO", "MICRO", "NANO", "PICO", "PROCHLO", "PROKAR"]
     fields = xr.open_mfdataset(
@@ -47,9 +47,9 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
     lon = fields["longitude"].to_numpy()
     lat = fields["latitude"].to_numpy()
     rows = []
-    for start, end in windows:
+    for start, end in date_ranges:
         composite = fields.sel(time=slice(str(start), str(end))).mean("time").load()  # (n_days, n_lat, n_lon) -> (n_lat, n_lon) per field
-        for eddy in collect_eddies_for_window(date_index, start, end):
+        for eddy in collect_eddies_for_date_range(date_index, start, end):
             box = composite.isel(
                 longitude=np.flatnonzero((lon >= eddy.contour_lon.min()) & (lon <= eddy.contour_lon.max())),
                 latitude=np.flatnonzero((lat >= eddy.contour_lat.min()) & (lat <= eddy.contour_lat.max())),

@@ -1,7 +1,7 @@
 """
 Compute the per-date background pigment means: the denominator of the eddy log-ratio targets.
 
-For each PACE composite, background pixels are open-water pixels that are both calm (|normalized relative vorticity| < 0.1, from the matching SWOT day) and outside every tracked eddy contour active during the window. Their Rrs spectra run through the same SDP model as the eddy pixels, and the per-pigment mean over those pixels is the background for that date.
+For each PACE composite, background pixels are open-water pixels that are both calm (|normalized relative vorticity| < 0.1, from the matching SWOT day) and outside every tracked eddy contour active during the date range. Their Rrs spectra run through the same SDP model as the eddy pixels, and the per-pigment mean over those pixels is the background for that date.
 
 Writes silver/pigments/background/bg_mean.parquet: one row per composite date with columns date, bg_mean_<pigment> (13), and n_bg_pixels.
 """
@@ -18,7 +18,7 @@ import xarray as xr
 from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.packages.sdp import PIGMENTS, run_sdp_on_pace_l3
 from eddy_tracking.preprocess.ancillary import read_ancillary_grids
-from eddy_tracking.preprocess.pace import parse_pace_window
+from eddy_tracking.preprocess.pace import parse_fn_for_date_range
 from eddy_tracking.preprocess.swot import (
     SWOT_SEARCH_DAYS,
     compute_calm_mask_on_pace,
@@ -102,10 +102,10 @@ def main(
     rng = np.random.default_rng(0)
     rows = []
     for fp in pace_files:
-        window = parse_pace_window(fp.name, temporal_res)
-        if window is None:
+        composite_date_range = parse_fn_for_date_range(fp.name, temporal_res)
+        if composite_date_range is None:
             continue
-        repr_date, win_start, win_end = window
+        repr_date, date_range_start, date_range_end = composite_date_range
 
         swot_fp = find_nearest_swot_file(swot_files, repr_date)
         if swot_fp is None:
@@ -137,14 +137,14 @@ def main(
             )
             continue
 
-        window_contours = []
-        day = win_start
-        while day <= win_end:
-            window_contours.extend((eddy.contour_lon, eddy.contour_lat) for eddy in date_index.get(day, []))
+        date_range_contours = []
+        day = date_range_start
+        while day <= date_range_end:
+            date_range_contours.extend((eddy.contour_lon, eddy.contour_lat) for eddy in date_index.get(day, []))
             day += dt.timedelta(days=1)
-        if window_contours:
+        if date_range_contours:
             inside = is_in_any_contour(
-                window_contours, lon2d.ravel()[candidate], lat2d.ravel()[candidate]  # (lat, lon) -> (lat*lon,) -> (n_candidate,) each
+                date_range_contours, lon2d.ravel()[candidate], lat2d.ravel()[candidate]  # (lat, lon) -> (lat*lon,) -> (n_candidate,) each
             )
             candidate = candidate[~inside]
         n_candidate = candidate.size

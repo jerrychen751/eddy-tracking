@@ -6,7 +6,7 @@ def parse_date_range(date_range: list[str] | None) -> tuple[dt.date, dt.date] | 
     """
     Parse a ["YYYY-MM-DD", "YYYY-MM-DD"] config value, such as ["2024-10-01", "2025-12-31"], into (start, end) dates.
 
-    Returns None when no window is configured, which disables temporal filtering.
+    Returns None when no date range is configured, which disables temporal filtering.
     """
     if not date_range:
         return None
@@ -21,7 +21,7 @@ def is_in_subset(
     date_range: tuple[dt.date, dt.date] | None,
 ) -> bool:
     """
-    Whether an eddy observation falls within the optional box and date window.
+    Whether an eddy observation falls within the optional box and date range.
 
     region is {"lon_range": [lo, hi], "lat_range": [lo, hi]} in -180/180 longitude, such as {"lon_range": [-81, -60], "lat_range": [30, 45]}, or None for no spatial filter. date_range is an inclusive (start, end) pair or None. Every bound is inclusive, and a None filter always passes.
     """

@@ -18,10 +18,10 @@ def read_multiple_sst(fps: Sequence[Path | str]) -> pd.DataFrame:
 
     arrays = []
     for f in files:
-        # "AQUA_MODIS.20250117_20250124.L3m.8D.SST.sst.4km.nc" carries the start and end of its 8-day window.
+        # "AQUA_MODIS.20250117_20250124.L3m.8D.SST.sst.4km.nc" carries the start and end of its 8-day date range.
         match = re.search(r"(\d{8})_(\d{8})", f.name)
         if not match:
-            raise ValueError(f"Cannot parse SST date window from: {f.name}")
+            raise ValueError(f"Cannot parse SST date range from: {f.name}")
         start = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
         end = dt.datetime.strptime(match.group(2), "%Y%m%d").date()
         midpoint = start + (end - start) / 2

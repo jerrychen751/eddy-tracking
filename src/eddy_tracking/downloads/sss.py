@@ -24,9 +24,9 @@ def download_smap_sss_8d(
     download_chunk_size_mb: int = 50,
 ) -> tuple[int, int]:
     """
-    Download SMAP L3 8-day SSS through Harmony, one request per batch_days window, which keeps each request under the Harmony size limit.
+    Download SMAP L3 8-day SSS through Harmony, one request per batch_days date range, which keeps each request under the Harmony size limit.
 
-    Creates out_dir and raw_tmp, writes one NetCDF per granule into out_dir, and deletes raw_tmp on exit. Sets the NUM_REQUESTS_WORKERS and DOWNLOAD_CHUNK_SIZE environment variables. Returns (files_saved, failed_windows).
+    Creates out_dir and raw_tmp, writes one NetCDF per granule into out_dir, and deletes raw_tmp on exit. Sets the NUM_REQUESTS_WORKERS and DOWNLOAD_CHUNK_SIZE environment variables. Returns (files_saved, failed_date_ranges).
     """
     import os as _os
 
@@ -46,12 +46,12 @@ def download_smap_sss_8d(
     start = dt.datetime.strptime(date_range[0], "%Y-%m-%d")
     end = dt.datetime.strptime(date_range[1], "%Y-%m-%d")
 
-    windows = []
-    window_start = start
-    while window_start < end:
-        window_end = min(window_start + dt.timedelta(days=batch_days), end)
-        windows.append((window_start, window_end))
-        window_start = window_end
+    batch_date_ranges = []
+    batch_start = start
+    while batch_start < end:
+        batch_end = min(batch_start + dt.timedelta(days=batch_days), end)
+        batch_date_ranges.append((batch_start, batch_end))
+        batch_start = batch_end
 
     out_dir = Path(out_dir)
     raw_tmp = Path(raw_tmp)
@@ -62,20 +62,20 @@ def download_smap_sss_8d(
     failed = 0
 
     try:
-        for i, (win_start, win_end) in enumerate(windows, 1):
-            label = win_start.strftime("%Y-%m")
+        for i, (batch_start, batch_end) in enumerate(batch_date_ranges, 1):
+            label = batch_start.strftime("%Y-%m")
             print(
-                f"window: {i}\n"
-                f"total_windows: {len(windows)}\n"
+                f"batch: {i}\n"
+                f"total_batches: {len(batch_date_ranges)}\n"
                 f"month: {label}\n"
-                f"start_date: {win_start.date()}\n"
-                f"end_date: {win_end.date()}"
+                f"start_date: {batch_start.date()}\n"
+                f"end_date: {batch_end.date()}"
             )
 
             request = Request(
                 collection=collection,
                 spatial=BBox(lon_range[0], lat_range[0], lon_range[1], lat_range[1]),
-                temporal={"start": win_start, "stop": win_end},
+                temporal={"start": batch_start, "stop": batch_end},
                 granule_name=["*8DAYS*"],
                 max_results=200,
                 skip_preview=True,
@@ -113,7 +113,7 @@ def download_smap_sss_8d(
 
 
 def main(experiment: str) -> None:
-    """Download configured SSS files and exit if a window fails."""
+    """Download configured SSS files and exit if a date range fails."""
     cfg = load_config(experiment)
     n_saved, n_failed = download_smap_sss_8d(
         date_range=tuple(cfg["base"]["time"]["rrs_date_range"]),
@@ -134,10 +134,10 @@ def main(experiment: str) -> None:
     print(
         "status: download_finished\n"
         f"sss_files_saved: {n_saved}\n"
-        f"windows_failed: {n_failed}"
+        f"date_ranges_failed: {n_failed}"
     )
     if n_failed:
-        raise SystemExit(f"{n_failed} SSS window(s) failed to download")
+        raise SystemExit(f"{n_failed} SSS date range(s) failed to download")
 
 
 if __name__ == "__main__":

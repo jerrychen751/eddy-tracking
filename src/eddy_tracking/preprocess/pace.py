@@ -267,11 +267,11 @@ def read_multiple_pace_l2(
     return combined
 
 
-def parse_pace_window(filename: str, temporal_res: str) -> tuple[dt.date, dt.date, dt.date] | None:
+def parse_fn_for_date_range(filename: str, temporal_res: str) -> tuple[dt.date, dt.date, dt.date] | None:
     """
-    (repr_date, win_start, win_end) for a PACE file, or None if it doesn't parse.
+    (repr_date, date_range_start, date_range_end) for a PACE file, or None if it doesn't parse.
 
-    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date. For 8-day composites it is the window midpoint; for daily files all three dates are the same day.
+    repr_date is the join key written to the table; it is computed exactly as in collocate_pace so background and eddy rows share a date. For 8-day composites it is the date range midpoint; for daily files all three dates are the same day.
     """
     if temporal_res == "8D":
         m = re.search(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.", filename)

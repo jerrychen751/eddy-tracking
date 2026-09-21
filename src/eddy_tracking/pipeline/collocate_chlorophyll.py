@@ -15,7 +15,7 @@ from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_output_dir
 from eddy_tracking.preprocess.tracks import (
     EddyObs,
     build_date_eddy_index,
-    collect_eddies_for_window,
+    collect_eddies_for_date_range,
     load_track_observations,
     load_tracks,
     mask_pixels_inside_contour,
@@ -139,7 +139,7 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
     rows = []
     for path, start, end in files:
         field = read_chlorophyll_field(path)
-        for eddy in collect_eddies_for_window(date_index, start, end):
+        for eddy in collect_eddies_for_date_range(date_index, start, end):
             if (
                 eddy.contour_lon.ndim != 1 or eddy.contour_lon.size < 3
                 or eddy.contour_lon.shape != eddy.contour_lat.shape
