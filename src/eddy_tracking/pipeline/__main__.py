@@ -110,7 +110,7 @@ def _run_parallel_downloads(
     print("status: downloads_complete")
 
 
-def resolve_stages(
+def _resolve_stages(
     args_stages: list[str],
     from_stage: str | None,
 ) -> list[str]:
@@ -159,7 +159,7 @@ def main() -> None:
     parser.add_argument("--from", dest="from_stage", metavar="STAGE")
     args = parser.parse_args()
 
-    stages_to_run = resolve_stages(args.stages, args.from_stage)
+    stages_to_run = _resolve_stages(args.stages, args.from_stage)
 
     config_dir = PROJECT_ROOT / "configs" / args.experiment
     if not config_dir.is_dir():
