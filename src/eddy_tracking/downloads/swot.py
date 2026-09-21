@@ -84,7 +84,7 @@ def mask_open_ocean(
     exclude_lon_range: tuple[float, float],
     exclude_lat_range: tuple[float, float],
 ) -> xr.Dataset:
-    """Mask invalid cells, their eight-cell coast buffer, and the configured exclusion box."""
+    """Mask invalid cells, their eight-cell coast buffer, and the configured exclusion box, keeping each unmasked field as `<field>_full` beside the `open_ocean` label."""
     swot_validity_fields = ("adt", "ugos", "vgos", "relative_vorticity")
     coast_min_distance_pixels = 8
 
@@ -116,7 +116,9 @@ def mask_open_ocean(
 
     filtered = dataset.copy()
     for field in swot_validity_fields:
+        filtered[f"{field}_full"] = dataset[field]
         filtered[field] = filtered[field].where(keep)
+    filtered["open_ocean"] = keep.astype("int8")
     return filtered
 
 
