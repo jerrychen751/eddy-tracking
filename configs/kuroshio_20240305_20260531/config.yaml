@@ -1,4 +1,4 @@
-# Kuroshio Extension pigment experiment. Same methods and parameters as gulf_stream_20240305_20260531; only the region, the exclusion box, and the jet latitude band differ.
+# Kuroshio Extension pigment experiment. Same methods and parameters as gulf_stream_20240305_20260531; only the region, the exclusion box, and the ADT level range of the jet axis differ.
 # 1. Eddy boundaries use PET's speed contour, where the mean speed around the contour is greatest.
 # 2. time_of_year_cos and time_of_year_sin represent the annual cycle as cos/sin of 2*pi*days/365, with days counted from January 1.
 # 3. The ocean mask excludes the Sea of Japan box, lon [135,140.5] and lat [35.5,44]. It keeps cells at least 8 grid cells from invalid data.
@@ -105,4 +105,4 @@ run_sdp:
   max_workers: 4
 
 gulf_stream:
-  lat_band: [30, 41]
+  adt_level_range: [0.60, 1.20]

@@ -1,11 +1,13 @@
 import datetime as dt
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import xarray as xr
+from contourpy import contour_generator
 from scipy.interpolate import RegularGridInterpolator
-from scipy.ndimage import uniform_filter
+from scipy.spatial import KDTree
 
 KM_PER_DEG_LAT = 111.0
 
@@ -25,130 +27,55 @@ class GulfStreamCenterline:
         self.lon = lon_arr
         self.lat = lat_arr
 
-    @classmethod
-    def from_streamline_field(
-        cls,
-        ugos: np.ndarray,
-        vgos: np.ndarray,
-        lon: np.ndarray,
-        lat: np.ndarray,
-        speed_threshold_percentile: int = 70,
-    ) -> "GulfStreamCenterline":
-        """
-        Trace the Gulf Stream core by following the local surface-current direction.
 
-        Starts at the fastest cell inside the box with the strongest local-average flow, traces downstream and upstream, allows short slow gaps, trims weak tails, and stops at the grid edge, land, or a curl back onto an earlier part of the path.
-        """
-        speed = np.hypot(ugos, vgos)
-        if not np.any(np.isfinite(speed)):
-            return cls(np.array([]), np.array([]))
-
-        threshold = np.nanpercentile(speed, speed_threshold_percentile)
-        u_at = RegularGridInterpolator((lat, lon), ugos, bounds_error=False, fill_value=np.nan)
-        v_at = RegularGridInterpolator((lat, lon), vgos, bounds_error=False, fill_value=np.nan)
-
-        # Seed from the strongest *coherent* flow rather than the single fastest pixel: the fastest cell inside the fully-finite seed_window box with the highest mean speed.
-        # This avoids lone coastal spikes whose NaN neighbours would make the interpolator return NaN at the seed and end the trace on its first step.
-        seed_window = 5  # box width (cells) for the coherent-flow seed; ~70 km at 1/8 deg
-        finite = np.isfinite(speed)
-        box = seed_window * seed_window
-        finite_in_box = uniform_filter(finite.astype(float), seed_window, mode="constant") * box
-        local_mean = uniform_filter(np.where(finite, speed, 0.0), seed_window, mode="constant") * box / np.maximum(finite_in_box, 1.0)
-        seed_score = np.where(finite_in_box >= box - 0.5, local_mean, -np.inf)
-        if seed_score.max() <= 0:
-            return cls(np.array([]), np.array([]))
-        # flat argmax over seed_score (n_lat, n_lon) -> (lat_idx, lon_idx)
-        window_lat_idx, window_lon_idx = np.unravel_index(
-            np.argmax(seed_score), speed.shape
-        )
-        half_window = seed_window // 2
-        window = speed[
-            window_lat_idx - half_window:window_lat_idx + half_window + 1,
-            window_lon_idx - half_window:window_lon_idx + half_window + 1,
-        ]
-        fastest_lat_idx, fastest_lon_idx = np.unravel_index(np.argmax(window), window.shape)
-        origin_lat_idx = window_lat_idx - half_window + fastest_lat_idx
-        origin_lon_idx = window_lon_idx - half_window + fastest_lon_idx
-        # origin, point, and every path row are (2,) holding (lat, lon) in degrees.
-        origin = np.array(
-            [lat[origin_lat_idx], lon[origin_lon_idx]], dtype=float
-        )
-
-        streamline_step_km = 5.0
-        max_gap_steps = 10
-        max_trace_steps = 2000
-        loop_min_points = 40
-        loop_skip_recent_points = 30
-
-        def trace(direction: int) -> list[np.ndarray]:
-            point = origin.copy()
-            path: list[np.ndarray] = []
-            gap = 0
-            last_strong = -1
-
-            for _ in range(max_trace_steps):
-                u = float(u_at([point])[0])
-                v = float(v_at([point])[0])
-                spd = float(np.hypot(u, v))
-                if not np.isfinite(spd) or spd == 0:
-                    break
-
-                path.append(point.copy())
-                if spd >= threshold:
-                    gap = 0
-                    last_strong = len(path) - 1
-                else:
-                    gap += 1
-                    if gap > max_gap_steps:
-                        break
-
-                point = point + np.array([
-                    streamline_step_km / KM_PER_DEG_LAT * direction * v / spd,
-                    streamline_step_km
-                    / (KM_PER_DEG_LAT * np.cos(np.radians(point[0])))
-                    * direction * u / spd,
-                ])
-
-                if not (lat.min() <= point[0] <= lat.max() and lon.min() <= point[1] <= lon.max()):
-                    break
-                if len(path) > loop_min_points:
-                    # list of (2,) -> earlier (n_earlier, 2)
-                    earlier = np.array(path[:-loop_skip_recent_points])
-                    if (
-                        np.hypot(earlier[:, 0] - point[0], earlier[:, 1] - point[1]).min()
-                        < streamline_step_km / KM_PER_DEG_LAT
-                    ):
-                        break
-
-            return path[:last_strong + 1]
-
-        upstream = trace(-1)
-        downstream = trace(+1)
-        # two lists of (2,) -> path (n_points, 2)
-        path = np.array(upstream[::-1] + downstream[1:])
-        if path.size == 0:
-            return cls(np.array([]), np.array([]))
-        # path (n_points, 2) -> lon (n_points,), lat (n_points,)
-        return cls(path[:, 1], path[:, 0])
-
-
-def trace_streamline_for_file(fp: Path, lat_band: tuple[float, float]) -> GulfStreamCenterline:
-    """Ordered Gulf Stream streamline for one SWOT day."""
+def load_axis_fields(fp: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     with xr.open_dataset(fp) as ds:
-        if "time" in ds.ugos.dims:
-            # ugos and vgos (1, n_lat, n_lon) -> (n_lat, n_lon)
-            ds = ds.isel(time=0)
-        lon = ds.longitude.to_numpy()
-        lat = ds.latitude.to_numpy()
-        ugos = ds.ugos.to_numpy()
-        vgos = ds.vgos.to_numpy()
+        ds = ds.isel(time=0)
+        speed = np.hypot(ds.ugos_full.to_numpy(), ds.vgos_full.to_numpy())
+        return ds.longitude.to_numpy(), ds.latitude.to_numpy(), ds.adt_full.to_numpy(), speed
 
-    # The Gulf Stream core stays well inside this latitude band within the ROI; restricting the search keeps the line off coastal/subpolar currents.
-    in_band = (lat >= lat_band[0]) & (lat <= lat_band[1])
-    # in_band (n_lat,) -> (n_lat, 1) to broadcast down each column of ugos and vgos (n_lat, n_lon)
-    ugos = np.where(in_band[:, np.newaxis], ugos, np.nan)
-    vgos = np.where(in_band[:, np.newaxis], vgos, np.nan)
-    return GulfStreamCenterline.from_streamline_field(ugos, vgos, lon, lat)
+
+def find_fastest_adt_level(
+    lon: np.ndarray, lat: np.ndarray, adt: np.ndarray, speed: np.ndarray, adt_level_range: tuple[float, float]
+) -> float:
+    speed_at = RegularGridInterpolator((lat, lon), np.nan_to_num(speed), bounds_error=False, fill_value=0.0)
+    contours = contour_generator(lon, lat, np.ma.masked_invalid(adt))
+    levels = np.arange(adt_level_range[0], adt_level_range[1] + 0.0125, 0.025)
+    scores = np.full(levels.size, -np.inf)
+    for index, level in enumerate(levels):
+        lines = cast(list[np.ndarray], contours.lines(level))
+        if not lines:
+            continue
+        line = max(lines, key=len)
+        if line[:, 0].max() >= lon.max() - 0.5:
+            scores[index] = speed_at(line[:, ::-1]).mean()
+    return float(levels[np.argmax(scores)])
+
+
+def trace_adt_contour(lon: np.ndarray, lat: np.ndarray, adt: np.ndarray, level: float) -> GulfStreamCenterline:
+    line = max(cast(list[np.ndarray], contour_generator(lon, lat, np.ma.masked_invalid(adt)).lines(level)), key=len)
+    if line[0, 0] > line[-1, 0]:
+        line = line[::-1]
+    step_km = np.hypot(np.diff(line[:, 0]) * np.cos(np.radians(line[:-1, 1])), np.diff(line[:, 1])) * KM_PER_DEG_LAT
+    along_km = np.concatenate([[0.0], np.cumsum(step_km)])
+    sample_km = np.arange(0.0, along_km[-1], 5.0)
+    return GulfStreamCenterline(np.interp(sample_km, along_km, line[:, 0]), np.interp(sample_km, along_km, line[:, 1]))
+
+
+def trace_mean_streamline(swot_files: list[Path], adt_level_range: tuple[float, float]) -> GulfStreamCenterline:
+    lon, lat, adt, speed = load_axis_fields(swot_files[0])
+    adt_sum = np.zeros(adt.shape)
+    speed_sum = np.zeros(adt.shape)
+    days = np.zeros(adt.shape)
+    for fp in swot_files:
+        _, _, adt, speed = load_axis_fields(fp)
+        finite = np.isfinite(adt) & np.isfinite(speed)
+        adt_sum += np.where(finite, adt, 0.0)
+        speed_sum += np.where(finite, speed, 0.0)
+        days += finite
+    days = np.where(days > 0, days, np.nan)
+    mean_adt = adt_sum / days
+    return trace_adt_contour(lon, lat, mean_adt, find_fastest_adt_level(lon, lat, mean_adt, speed_sum / days, adt_level_range))
 
 
 def index_centerlines_by_date(streamline_df: pd.DataFrame) -> dict[dt.date, GulfStreamCenterline]:
@@ -169,7 +96,7 @@ def compute_signed_distance_km(
     """
     Signed shortest distance from an eddy center to an ordered streamline.
 
-    Positive (side 'N') means the eddy is geographically north of the nearest point on the jet, negative ('S') south. Returns (nan, '') if the streamline has too few finite points.
+    Positive (side 'N') means the eddy is to the left of the flow at the nearest point on the jet, which is north where the jet flows east, negative ('S') to the right. Returns (nan, '') if the streamline has too few finite points.
     """
     streamline_lon = np.asarray(streamline_lon, dtype=float)
     streamline_lat = np.asarray(streamline_lat, dtype=float)
@@ -195,8 +122,6 @@ def compute_signed_distance_km(
     start = start[nonzero]
     seg = seg[nonzero]
     seg_len2 = seg_len2[nonzero]
-    start_lat = lat[:-1][nonzero]
-    end_lat = lat[1:][nonzero]
 
     # The eddy center is the origin in this local km coordinate frame.
     t = np.clip(-np.einsum("ij,ij->i", start, seg) / seg_len2, 0.0, 1.0)
@@ -204,9 +129,36 @@ def compute_signed_distance_km(
     closest = start + t[:, np.newaxis] * seg
     dist = np.hypot(closest[:, 0], closest[:, 1])
     nearest_idx = int(np.argmin(dist))
-    closest_lat = start_lat[nearest_idx] + t[nearest_idx] * (
-        end_lat[nearest_idx] - start_lat[nearest_idx]
-    )
-    side = "N" if center_lat >= closest_lat else "S"
+    left_of_flow = seg[nearest_idx, 1] * closest[nearest_idx, 0] - seg[nearest_idx, 0] * closest[nearest_idx, 1]
+    side = "N" if left_of_flow >= 0 else "S"
     signed = dist[nearest_idx] if side == "N" else -dist[nearest_idx]
     return float(signed), side
+
+
+def compute_signed_distance_grid_km(
+    streamline_lon: np.ndarray, streamline_lat: np.ndarray, lon: np.ndarray, lat: np.ndarray
+) -> np.ndarray:
+    lon_grid, lat_grid = np.meshgrid(lon, lat)
+    chord, nearest = KDTree(_convert_to_unit_sphere(streamline_lon, streamline_lat)).query(
+        _convert_to_unit_sphere(lon_grid.ravel(), lat_grid.ravel())
+    )
+    nearest = nearest.reshape(lon_grid.shape)
+    distance = np.degrees(2 * np.arcsin(chord / 2)).reshape(lon_grid.shape) * KM_PER_DEG_LAT
+
+    last = streamline_lon.size - 1
+    ahead = np.minimum(nearest + 1, last)
+    behind = np.maximum(nearest - 1, 0)
+    scale_x = np.cos(np.radians(streamline_lat[nearest]))
+    flow_x = (streamline_lon[ahead] - streamline_lon[behind]) * scale_x
+    flow_y = streamline_lat[ahead] - streamline_lat[behind]
+    pixel_x = (lon_grid - streamline_lon[nearest]) * scale_x
+    pixel_y = lat_grid - streamline_lat[nearest]
+    left_of_flow = flow_x * pixel_y - flow_y * pixel_x
+    signed = np.where(left_of_flow >= 0, distance, -distance)
+    return np.where((nearest == 0) | (nearest == last), np.nan, signed)
+
+
+def _convert_to_unit_sphere(lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
+    lon_rad = np.radians(lon)
+    lat_rad = np.radians(lat)
+    return np.column_stack([np.cos(lat_rad) * np.cos(lon_rad), np.cos(lat_rad) * np.sin(lon_rad), np.sin(lat_rad)])

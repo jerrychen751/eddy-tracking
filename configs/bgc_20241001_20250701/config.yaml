@@ -68,4 +68,4 @@ collocate_pace:
   # track_ids: [5, 12, 20]
 
 gulf_stream:
-  lat_band: [32, 43]
+  adt_level_range: [0.10, 0.60]

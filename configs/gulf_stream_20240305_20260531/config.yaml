@@ -105,4 +105,4 @@ run_sdp:
   max_workers: 4
 
 gulf_stream:
-  lat_band: [32, 43]
+  adt_level_range: [0.10, 0.60]

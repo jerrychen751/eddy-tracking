@@ -1,10 +1,10 @@
 """
 Find the Gulf Stream jet-core axis per date from SWOT SSH, and classify each eddy track's movement relative to it.
 
-The axis is an ordered streamline traced through the fastest Gulf Stream core flow in the Gulf Stream latitude band. Movement (NN/NS/SN/SS) compares an eddy's geographic side of the axis (north/south) at birth vs death.
+The axis is the longest absolute dynamic topography contour at the level with the fastest mean flow along it, with that level smoothed over 15 days. Movement (NN/NS/SN/SS) compares an eddy's side of the axis at birth vs death: left of the flow is N, right is S.
 
 Outputs to silver/gulf_stream/:
-  - streamline.parquet holds one row per ordered centerline point: date, point_idx, lon, lat
+  - streamline.parquet holds one row per ordered centerline point: date, point_idx, lon, lat, adt_level
   - eddy_movement.parquet holds one row per (polarity, track_id): movement class, sides, and signed axis distances in km
 """
 
@@ -15,7 +15,13 @@ import numpy as np
 import pandas as pd
 
 from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
-from eddy_tracking.preprocess.streamline import GulfStreamCenterline, compute_signed_distance_km, trace_streamline_for_file
+from eddy_tracking.preprocess.streamline import (
+    GulfStreamCenterline,
+    compute_signed_distance_km,
+    find_fastest_adt_level,
+    load_axis_fields,
+    trace_adt_contour,
+)
 from eddy_tracking.preprocess.swot import index_swot_files_by_date
 from eddy_tracking.preprocess.tracks import load_track_observations
 
@@ -24,7 +30,7 @@ def main(experiment: str) -> None:
     """Trace daily streamlines and write streamline and movement Parquet files."""
     cfg = load_config(experiment)
     swot_dir = resolve_data_dir(cfg, "swot_dir")
-    lat_band = tuple(cfg["gulf_stream"]["lat_band"])
+    adt_level_range = tuple(cfg["gulf_stream"]["adt_level_range"])
     out_dir = resolve_output_dir(experiment, "gulf_stream")
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -33,16 +39,23 @@ def main(experiment: str) -> None:
         "status: computing_gulf_stream_streamline\n"
         f"swot_days: {len(swot_files)}"
     )
+    adt_levels = pd.Series({
+        date: find_fastest_adt_level(*load_axis_fields(fp), adt_level_range)
+        for date, fp in sorted(swot_files.items())
+    }).rolling(15, center=True, min_periods=1).median().to_dict()
     streamline_rows = []
     centerline_by_date: dict[dt.date, GulfStreamCenterline] = {}
     for date, fp in sorted(swot_files.items()):
-        centerline = trace_streamline_for_file(fp, lat_band)
+        lon, lat, adt, _ = load_axis_fields(fp)
+        adt_level = adt_levels[date]
+        centerline = trace_adt_contour(lon, lat, adt, adt_level)
         centerline_by_date[date] = centerline
         streamline_rows.append(pd.DataFrame({
             "date": pd.Timestamp(date),
             "point_idx": np.arange(centerline.lon.size, dtype=int),
             "lon": centerline.lon,
             "lat": centerline.lat,
+            "adt_level": adt_level,
         }))
     streamline_df = pd.concat(streamline_rows, ignore_index=True)
     streamline_df["date"] = pd.to_datetime(streamline_df["date"])
