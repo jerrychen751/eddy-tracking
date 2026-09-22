@@ -223,7 +223,8 @@ data/             per-experiment medallion layers (gitignored, regenerable):
     bronze/       raw downloads (SWOT, PACE, SST, SSS, Copernicus Marine plankton)
     silver/       processed stages (eddy_id, eddy_track, collocate_pace,
                   pigments, gulf_stream, eddy_dynamics)
-    gold/         analysis-ready eddy-pigment and eddy-plankton tables
+    gold/         analysis-ready eddy-pigment and eddy-plankton tables, and the
+                  axis-profile and ring tables that research_paper/eddy_evolution.ipynb caches
 outputs/          legacy outputs from older experiments (pre-medallion)
 src/eddy_tracking/
   config.py       config loader, medallion path helpers, METADATA_COLS
