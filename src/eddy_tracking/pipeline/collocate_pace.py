@@ -148,8 +148,9 @@ def main(experiment: str) -> None:
     )
 
     with xr.open_dataset(pace_files[0]) as sample:
-        wavelengths = sample.coords["wavelength"].values.astype(int)
-    rrs_columns = [f"Rrs_{wavelength}" for wavelength in wavelengths]
+        wavelengths = sample.coords["wavelength"].values
+    # SDP reads each band center back from the column name, and OCI centers sit up to 1 nm off whole numbers
+    rrs_columns = [f"Rrs_{wavelength:.3f}" for wavelength in wavelengths]
 
     rows_by_eddy: dict[tuple[int, str], list[np.ndarray]] = defaultdict(list)
     n_matched_files = 0

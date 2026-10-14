@@ -105,7 +105,7 @@ def main(experiment: str, subsample: int, limit: int) -> None:
         with xr.open_dataset(fp) as ds:
             pace_lon = ds["lon"].values
             pace_lat = ds["lat"].values
-            wavelengths = ds.coords["wavelength"].values.astype(int)
+            wavelengths = ds.coords["wavelength"].values
             rrs = ds["Rrs"].values  # (lat, lon, wavelength)
 
         lon2d, lat2d = np.meshgrid(pace_lon, pace_lat)  # (n_lon,) + (n_lat,) -> (n_lat, n_lon) each
@@ -150,7 +150,7 @@ def main(experiment: str, subsample: int, limit: int) -> None:
             "pixel_lon": lon2d.ravel()[candidate],  # (lat, lon) -> (lat*lon,) -> (n_candidate,)
             "pixel_lat": lat2d.ravel()[candidate],  # (lat, lon) -> (lat*lon,) -> (n_candidate,)
         })
-        rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w}" for w in wavelengths])  # pyright: ignore[reportArgumentType]  # (lat*lon, wavelength) -> (n_candidate, wavelength)
+        rrs_df = pd.DataFrame(rrs_flat[candidate], columns=[f"Rrs_{w:.3f}" for w in wavelengths])  # pyright: ignore[reportArgumentType]  # (lat*lon, wavelength) -> (n_candidate, wavelength)
         df = pd.concat([df, rrs_df], axis=1)
 
         means = compute_background_means(df, sst_df, sss_df)
