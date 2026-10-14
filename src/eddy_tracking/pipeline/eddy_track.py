@@ -7,8 +7,13 @@ Builds frame-to-frame eddy correspondences from the daily .nc files produced by 
 import shutil
 import sys
 from pathlib import Path
+from typing import cast
+
+from numpy import concatenate, ones
 
 from eddy_tracking.config import load_config, resolve_output_dir
+from eddy_tracking.packages.py_eddy_tracker.generic import distance_grid
+from eddy_tracking.packages.py_eddy_tracker.observations.observation import EddiesObservations
 from eddy_tracking.packages.py_eddy_tracker.tracking import Correspondances
 
 
@@ -20,11 +25,53 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
+class SpeedLimitedObservations(EddiesObservations):
+    # PET alone accepts any detection within 125 km of a virtual observation's extrapolated position, however many days the eddy has been missing.
+    # This keeps that test and also requires the jump from the last real detection to fit inside both speed radii plus a maximum drift per elapsed day.
+    __slots__ = ("max_speed_km_per_day", "days_since_detection", "detected_lon", "detected_lat")
+
+    def __init__(self, *args, max_speed_km_per_day=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_speed_km_per_day = max_speed_km_per_day
+        self.days_since_detection = None
+        self.detected_lon = None
+        self.detected_lat = None
+
+    def merge(self, other):
+        # Correspondances.track appends the virtual observations to the previous day's detections, and the merged copy keeps only the shared fields, so record each row's gap here.
+        eddies = super().merge(other)
+        eddies.max_speed_km_per_day = self.max_speed_km_per_day
+        # A virtual observation with segment_size k sits k daily steps past its last detection and is matched against the day after, k + 1 days from that detection.
+        segment_size = other["segment_size"]
+        eddies.days_since_detection = concatenate((ones(len(self)), segment_size + 1))
+        eddies.detected_lon = concatenate((self.lon, other.lon - segment_size * other["dlon"]))
+        eddies.detected_lat = concatenate((self.lat, other.lat - segment_size * other["dlat"]))
+        return eddies
+
+    def mask_function(self, other, distance):
+        if self.days_since_detection is None:
+            # Before the first virtual observation exists, every row is a detection from the previous day.
+            days, lon, lat = ones(len(self)), self.lon, self.lat
+        else:
+            days, lon, lat = self.days_since_detection, self.detected_lon, self.detected_lat
+        jump_km = distance_grid(lon, lat, other.lon, other.lat)
+        # load_file passes the speed through class_kw and merge copies it, so only the bare constructor inside new_like leaves it None.
+        max_speed_km_per_day = cast(float, self.max_speed_km_per_day)
+        # radius_s is in meters.
+        reach_km = (
+            self.radius_s[:, None] / 1000
+            + other.radius_s[None, :] / 1000
+            + max_speed_km_per_day * days[:, None]
+        )
+        return super().mask_function(other, distance) & (jump_km <= reach_km)
+
+
 def track(
     id_dir: Path,
     track_dir: Path,
     *,
     virtual: int,
+    max_speed_km_per_day: float,
     min_track_days: int,
     median_half_window: int,
     loess_half_window: int,
@@ -50,6 +97,8 @@ def track(
     correspondences = Correspondances(
         datasets=identification_files,
         virtual=virtual,
+        class_method=SpeedLimitedObservations,
+        class_kw={"max_speed_km_per_day": max_speed_km_per_day},
     )
     correspondences.track()
 
@@ -97,6 +146,7 @@ def main(experiment: str) -> None:
             id_dir,
             track_dir,
             virtual=tracking_cfg["virtual"],
+            max_speed_km_per_day=tracking_cfg["max_speed_km_per_day"],
             min_track_days=tracking_cfg["min_track_days"],
             median_half_window=filter_cfg["median_half_window"],
             loess_half_window=filter_cfg["loess_half_window"],

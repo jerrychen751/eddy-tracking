@@ -82,6 +82,9 @@ eddy_track:
   # Max consecutive missed days before breaking a track
   virtual: 5
 
+  # Max km per elapsed day a center may move from its last detection, beyond the two speed radii
+  max_speed_km_per_day: 10
+
   # Discard tracks shorter than this (days)
   min_track_days: 30
 
