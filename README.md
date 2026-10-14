@@ -64,6 +64,8 @@ configs/
     config.yaml # all stage settings in one file, keyed by section: base (region, dates, data paths), eddy_id, eddy_track, collocate_pace
   kuroshio_20240305_20260531/
     config.yaml # the same settings over the Kuroshio Extension, lon [135, 160] and lat [29, 44]
+  gulf_stream_20240305_20260531_pace_l2/
+    config.yaml # the canonical eddies matched to daily Rrs gridded from PACE L2 swaths, not to the 8-day composite
 ```
 
 Data is organized in a bronze/silver/gold (medallion) layout: `bronze/` is raw
@@ -86,6 +88,10 @@ The canonical experiment uses 50% valid interior coverage and at least 10 pixels
 
 The stage rejects overlapping composite files, including two product versions for one interval. It reports an error when no observations pass the filters. It permits unknown movement classes when an endpoint has no usable Gulf Stream axis. A change to the source files or thresholds requires another stage run.
 
+The `gulf_stream_20240305_20260531_pace_l2` experiment asks how often an eddy has a usable PACE view when each day is taken alone. Its optional `download_pace_l2` stage downloads the L2 AOP swaths of each day, drops every pixel with a flag in `base.download.pace_l2.excluded_flags`, averages the rest into the 4 km cells of the L3 grid, writes one file per day to `bronze/pace_l2_day/`, and deletes the swaths. `collocate_pace` then reads those files with `temporal_resolution: "DAY"`. Run the download on Phoenix: the swaths of the Gulf Stream box come to about 570 GB over 667 days. Copy `silver/eddy_track` and `silver/gulf_stream` from the canonical experiment into the new one first, so both use the same eddies, then run `uv run python -m eddy_tracking.pipeline gulf_stream_20240305_20260531_pace_l2 download_pace_l2 collocate_pace`.
+
+`uv run python scripts/collocate_pace_coverage.py <experiment>` writes `silver/pace_coverage/eddy_coverage.parquet`, the Rrs coverage of every eddy in every PACE file, including the eddies below `collocate_pace.min_coverage`. It works on the 8-day and the daily experiment, so the two matchup counts can be compared at any coverage threshold.
+
 ```text
 Bronze downloads
 ----------------
@@ -98,6 +104,9 @@ python -m eddy_tracking.downloads.cmems_ssh <experiment>   (an experiment with b
 python -m eddy_tracking.downloads.pace <experiment>
   -> data/{dataset}/bronze/pace_l3_8d/*.nc
   -> data/{dataset}/bronze/pace_l3_8d_bgc/*.nc
+
+python -m eddy_tracking.downloads.pace_l2 <experiment>   (optional, the pace_l2 experiment)
+  -> data/{dataset}/bronze/pace_l2_day/*.nc
 
 python -m eddy_tracking.downloads.sst <experiment>
   -> data/{dataset}/bronze/sst/*.nc
