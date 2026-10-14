@@ -24,7 +24,6 @@ from eddy_tracking.config import PROJECT_ROOT
 VALID_STAGES = [
     "download_swot",
     "download_pace",
-    "download_pace_l2",
     "download_sst_sss",
     "download_cmems",
     # Not a parallel download: it reads the grid and the open_ocean label from the AVISO files that download_swot writes.
@@ -44,10 +43,10 @@ VALID_STAGES = [
 # These run only when named, or when --from starts at one of them.
 DEFAULT_STAGES = [
     stage for stage in VALID_STAGES
-    if stage not in {"download_pace_l2", "collocate_chlorophyll"}
+    if stage not in {"collocate_chlorophyll"}
 ]
 
-PARALLEL_STAGES = {"download_swot", "download_pace", "download_pace_l2", "download_sst_sss", "download_cmems"}
+PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss", "download_cmems"}
 
 
 def _log_stage(action: str, stage: str) -> None:
@@ -66,7 +65,6 @@ def _run_stage(experiment: str, stage: str) -> None:
     stage_modules = {
         "download_swot": ("eddy_tracking.downloads.swot",),
         "download_pace": ("eddy_tracking.downloads.pace",),
-        "download_pace_l2": ("eddy_tracking.downloads.pace_l2",),
         "download_sst_sss": (
             "eddy_tracking.downloads.sst",
             "eddy_tracking.downloads.sss",
