@@ -63,8 +63,9 @@ def main(experiment: str) -> None:
         if out_path.exists():
             n_skipped += 1
             continue
-        fields = maps.sel(time=day).load()
-        if not fields["adt"].notnull().any():
+        # A day past the end of the store's time axis has no map, like a day the store fills with NaN
+        fields = maps.sel(time=day).load() if day in maps.indexes["time"] else None
+        if fields is None or not fields["adt"].notnull().any():
             print(
                 "status: no_map\n"
                 f"date: {day.date()}"
@@ -101,12 +102,16 @@ def main(experiment: str) -> None:
         write_netcdf_atomically(daily, out_path)
         n_saved += 1
 
+    status = "incomplete" if n_missing else "complete"
     print(
-        "status: complete\n"
+        f"status: {status}\n"
         f"files_saved: {n_saved}\n"
         f"files_skipped: {n_skipped}\n"
         f"days_without_map: {n_missing}"
     )
+    # Later stages would track straight across the gap, so stop the pipeline here; a rerun keeps the saved days and tries the missing ones again
+    if n_missing:
+        raise SystemExit(f"{n_missing} day(s) had no Copernicus map")
 
 
 if __name__ == "__main__":
