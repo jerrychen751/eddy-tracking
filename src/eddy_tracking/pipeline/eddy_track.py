@@ -92,7 +92,6 @@ def main(experiment: str) -> None:
     for polarity in ("anticyclone", "cyclone"):
         id_dir = resolve_output_dir(experiment, "eddy_id", polarity)
         track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
-        track_dir.mkdir(parents=True, exist_ok=True)
 
         track(
             id_dir,

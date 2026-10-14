@@ -235,7 +235,7 @@ def main(experiment: str) -> None:
         observations["track_id"] = observations["track_id"].astype(int)
         observations["inside_contour"] = observations["inside_contour"].astype(bool)
         observations["date"] = (
-            pd.Timestamp("1950-01-01")
+            pd.Timestamp(PET_EPOCH)
             + pd.to_timedelta(observations["date"], unit="D")  # pyright: ignore[reportArgumentType, reportCallIssue]
         )
 

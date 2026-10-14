@@ -1,5 +1,5 @@
 {
-  "exclude": ["**/__pycache__", ".venv", "archive", "src/eddy_tracking/packages"],
+  "exclude": ["**/__pycache__", ".venv", "archive", "data", "src/eddy_tracking/packages"],
   "venvPath": ".",
   "venv": ".venv",
   "extraPaths": [".", "src"],

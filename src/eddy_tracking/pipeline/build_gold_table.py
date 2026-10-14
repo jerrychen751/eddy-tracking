@@ -17,11 +17,13 @@ from eddy_tracking.packages.sdp import PIGMENTS
 from eddy_tracking.preprocess.streamline import compute_signed_distance_km, index_centerlines_by_date
 from eddy_tracking.preprocess.tracks import load_track_observations
 
+POLARITY_VALUES = {"anticyclone": 0, "cyclone": 1}
+
 
 def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
     """Aggregate pigment files to one quality-control row per eddy-day."""
     rows = []
-    for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
+    for polarity, polarity_value in POLARITY_VALUES.items():
         pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
         for pigment_path in sorted(pigment_dir.glob("*_pigments.parquet")):
             pigments = pd.read_parquet(pigment_path)
@@ -47,7 +49,7 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
 def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build observation features and birth/death dates for both polarities."""
     track_observations = load_track_observations(experiment)
-    track_observations["polarity"] = track_observations["polarity"].map({"anticyclone": 0, "cyclone": 1})  # pyright: ignore[reportArgumentType]
+    track_observations["polarity"] = track_observations["polarity"].map(POLARITY_VALUES)  # pyright: ignore[reportArgumentType]
     track_observations = cast(pd.DataFrame, track_observations[
         ["polarity", "track_id", "date", "radius_km", "amplitude_cm"]
     ])
@@ -62,7 +64,7 @@ def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 def load_eddy_dynamics(dynamics_dir: Path) -> pd.DataFrame:
     """Load available per-observation Rossby diagnostics for both polarities."""
     frames = []
-    for polarity, polarity_value in [("anticyclone", 0), ("cyclone", 1)]:
+    for polarity, polarity_value in POLARITY_VALUES.items():
         dynamics_path = dynamics_dir / polarity / "dynamics.parquet"
         if not dynamics_path.exists():
             continue
@@ -189,7 +191,7 @@ def main(experiment: str) -> None:
         )
 
     movement = pd.read_parquet(gulf_stream_dir / "eddy_movement.parquet")
-    movement["polarity"] = movement["polarity"].map({"anticyclone": 0, "cyclone": 1})  # pyright: ignore[reportArgumentType]
+    movement["polarity"] = movement["polarity"].map(POLARITY_VALUES)  # pyright: ignore[reportArgumentType]
     eddy_days = eddy_days.merge(
         movement[["polarity", "track_id", "movement"]],
         on=["polarity", "track_id"],

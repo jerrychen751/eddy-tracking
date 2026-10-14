@@ -32,7 +32,6 @@ def main(experiment: str) -> None:
     swot_dir = resolve_data_dir(cfg, "swot_dir")
     adt_level_range = tuple(cfg["gulf_stream"]["adt_level_range"])
     out_dir = resolve_output_dir(experiment, "gulf_stream")
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     swot_files = index_swot_files_by_date(swot_dir)
     print(
