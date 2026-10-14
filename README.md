@@ -231,7 +231,6 @@ data/             per-experiment medallion layers (gitignored, regenerable):
                   pigments, gulf_stream, eddy_dynamics)
     gold/         analysis-ready eddy-pigment and eddy-plankton tables, and the
                   axis-profile and ring tables that research_paper/eddy_evolution.ipynb caches
-outputs/          legacy outputs from older experiments (pre-medallion)
 src/eddy_tracking/
   config.py       config loader, medallion path helpers, METADATA_COLS
   downloads/      importable SWOT, PACE, SST, SSS, and Copernicus Marine download modules
@@ -243,8 +242,10 @@ src/eddy_tracking/
     py_eddy_tracker/
                   vendored eddy identification and tracking package
 scripts/          analysis scripts that read the pipeline outputs
-notebooks/        exploratory analysis
+notebooks/        exploratory notebooks, numbered by kind (see notebooks/README.md), and archive/
+research_paper/   paper figure and analysis notebooks
+research_updates/ dated advisor update notebooks
+conferences/      poster notebooks: space_week.ipynb and se_bgc.ipynb
 slurm/            HPC job script
-docs/             current research scope and evidence requirements
-archive/          old single-eddy analysis outputs
+docs/             research scope, case-study eddies, and the SDP validity notes (sdp_validity/)
 ```
