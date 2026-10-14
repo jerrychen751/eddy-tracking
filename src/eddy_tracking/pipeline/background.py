@@ -8,8 +8,6 @@ Writes silver/pigments/background/bg_mean.parquet: one row per composite date wi
 
 import argparse
 import datetime as dt
-from collections import defaultdict
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -25,7 +23,7 @@ from eddy_tracking.preprocess.swot import (
     find_nearest_swot_file,
     index_swot_files_by_date,
 )
-from eddy_tracking.preprocess.tracks import EddyObs, build_date_eddy_index, is_in_any_contour, load_tracks
+from eddy_tracking.preprocess.tracks import is_in_any_contour, load_date_eddy_index
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,18 +61,8 @@ def compute_background_means(
     return means
 
 
-def main(
-    experiment: str | None = None,
-    subsample: int = 2000,
-    limit: int = 0,
-) -> None:
+def main(experiment: str, subsample: int, limit: int) -> None:
     """Compute and write per-date background pigment means."""
-    if experiment is None:
-        args = parse_args()
-        experiment = cast(str, args.experiment)
-        subsample = args.subsample
-        limit = args.limit
-
     cfg = load_config(experiment)
     swot_dir = resolve_data_dir(cfg, "swot_dir")
     pace_dir = resolve_data_dir(cfg, "pace_dir")
@@ -84,10 +72,7 @@ def main(
     temporal_res = cfg["collocate_pace"].get("temporal_resolution", "DAY")
 
     swot_files = index_swot_files_by_date(swot_dir)
-    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
-    for polarity in ("cyclone", "anticyclone"):
-        for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity).items():
-            date_index[day].extend(eddies)
+    date_index = load_date_eddy_index(experiment)
     print("status: loading_sst_sss_grids")
     sst_df, sss_df = read_ancillary_grids(sst_dir, sss_dir)
 
@@ -199,4 +184,5 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.experiment, args.subsample, args.limit)
