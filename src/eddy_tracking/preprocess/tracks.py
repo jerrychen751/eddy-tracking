@@ -84,6 +84,20 @@ def build_date_eddy_index(
     return date_index
 
 
+def load_date_eddy_index(
+    experiment: str,
+    track_ids: set[int] | None = None,
+    region: dict | None = None,
+    date_range: tuple[dt.date, dt.date] | None = None,
+) -> dict[dt.date, list[EddyObs]]:
+    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
+    for polarity in ("cyclone", "anticyclone"):
+        polarity_date_index = build_date_eddy_index(load_tracks(experiment, polarity), polarity, track_ids, region, date_range)
+        for day, observations in polarity_date_index.items():
+            date_index[day].extend(observations)
+    return date_index
+
+
 def collect_eddies_for_date_range(
     date_index: dict[dt.date, list["EddyObs"]],
     start: dt.date,

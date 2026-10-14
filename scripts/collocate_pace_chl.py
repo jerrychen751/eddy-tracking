@@ -15,7 +15,6 @@ import argparse
 import datetime as dt
 import json
 import re
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +28,7 @@ from eddy_tracking.preprocess.swot import (
     find_nearest_swot_file,
     index_swot_files_by_date,
 )
-from eddy_tracking.preprocess.tracks import EddyObs, build_date_eddy_index, is_in_any_contour, load_tracks
+from eddy_tracking.preprocess.tracks import is_in_any_contour, load_date_eddy_index
 
 
 def read_eddy_pixels(experiment: str) -> pd.DataFrame:
@@ -74,10 +73,7 @@ def collocate_chlor_a(
     bgc_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.BGC\.")
     rrs_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
     swot_files = index_swot_files_by_date(data_dir / "bronze" / "swot_l4_open_ocean")
-    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
-    for polarity in ("cyclone", "anticyclone"):
-        for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity).items():
-            date_index[day].extend(eddies)
+    date_index = load_date_eddy_index(experiment)
     pixels = read_eddy_pixels(experiment)
     print(
         f"eddy_pixels: {len(pixels):,}\n"

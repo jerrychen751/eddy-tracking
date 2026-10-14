@@ -3,23 +3,20 @@
 import datetime as dt
 import re
 import sys
-from collections import defaultdict
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_output_dir
+from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.preprocess.tracks import (
-    EddyObs,
-    build_date_eddy_index,
     collect_eddies_for_date_range,
+    load_date_eddy_index,
     load_track_observations,
-    load_tracks,
     mask_pixels_inside_contour,
 )
+from eddy_tracking.utils.files import write_parquet_atomically
 
 
 def collect_chlorophyll_files(
@@ -122,20 +119,12 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
     date_range = (dt.date.fromisoformat(dates[0]), dt.date.fromisoformat(dates[1]))
     if date_range[0] > date_range[1]:
         raise ValueError("collocate_pace.date_range must be chronological.")
-    data_dir = PROJECT_ROOT / "data" / experiment
-    pace_dir = PROJECT_ROOT / cfg["base"]["data"]["root"] / cfg["base"]["dataset"] / "bronze" / cfg["base"]["data"]["pace_bgc_dir"]
-    files = collect_chlorophyll_files(pace_dir, date_range)
+    files = collect_chlorophyll_files(resolve_data_dir(cfg, "pace_bgc_dir"), date_range)
     observations = load_track_observations(experiment)
-    movement = read_movement_table(data_dir / "silver/gulf_stream/eddy_movement.parquet", observations)
+    movement = read_movement_table(resolve_output_dir(experiment, "gulf_stream") / "eddy_movement.parquet", observations)
     configured_ids = collocation_cfg.get("track_ids")
     selected_ids = set(configured_ids) if configured_ids else None
-    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
-    for polarity in ("cyclone", "anticyclone"):
-        polarity_index = build_date_eddy_index(
-            load_tracks(experiment, polarity), polarity, selected_ids, collocation_cfg.get("region"), date_range,
-        )
-        for day, eddies in polarity_index.items():
-            date_index[day].extend(eddies)
+    date_index = load_date_eddy_index(experiment, selected_ids, collocation_cfg.get("region"), date_range)
     rows = []
     for path, start, end in files:
         field = read_chlorophyll_field(path)
@@ -190,13 +179,7 @@ def main(experiment: str) -> None:
     """Validate inputs and atomically replace silver/pace_chl/eddy_chlor_a.parquet; preserve the prior table on failure."""
     chl = build_chlorophyll_table(experiment)
     out_path = resolve_output_dir(experiment, "pace_chl") / "eddy_chlor_a.parquet"
-    with NamedTemporaryFile(dir=out_path.parent, suffix=".parquet", delete=False) as temporary:
-        temporary_path = Path(temporary.name)
-    try:
-        chl.to_parquet(temporary_path, index=False)
-        temporary_path.replace(out_path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
+    write_parquet_atomically(chl, out_path)
     print(f"output_file: {out_path}\neddy_composites: {len(chl)}")
 
 

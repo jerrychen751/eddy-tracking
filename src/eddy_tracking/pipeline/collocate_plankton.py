@@ -2,22 +2,18 @@
 
 import datetime as dt
 import sys
-from collections import defaultdict
-from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from eddy_tracking.config import PROJECT_ROOT, load_config, resolve_data_dir, resolve_gold_dir
+from eddy_tracking.config import load_config, resolve_data_dir, resolve_gold_dir, resolve_output_dir
 from eddy_tracking.preprocess.tracks import (
-    EddyObs,
-    build_date_eddy_index,
     collect_eddies_for_date_range,
-    load_tracks,
+    load_date_eddy_index,
     mask_pixels_inside_contour,
 )
+from eddy_tracking.utils.files import write_parquet_atomically
 
 
 def build_plankton_table(experiment: str) -> pd.DataFrame:
@@ -27,11 +23,7 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
     cfg = load_config(experiment)
     settings = cfg["collocate_plankton"]
     first_day, last_day = [dt.date.fromisoformat(value) for value in cfg["base"]["time"]["eddy_date_range"]]
-    data_dir = PROJECT_ROOT / "data" / experiment
-    date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
-    for polarity in ("cyclone", "anticyclone"):
-        for day, eddies in build_date_eddy_index(load_tracks(experiment, polarity), polarity, date_range=(first_day, last_day)).items():
-            date_index[day].extend(eddies)
+    date_index = load_date_eddy_index(experiment, date_range=(first_day, last_day))
     date_ranges = []
     for year in range(first_day.year, last_day.year + 1):
         start = dt.date(year, 1, 1)
@@ -76,7 +68,7 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
                 row[f"{field}_n_pixels"] = int(valid.sum())
             rows.append(row)
     identity_columns = ["polarity", "track_id"]
-    movement = pd.read_parquet(data_dir / "silver/gulf_stream/eddy_movement.parquet")
+    movement = pd.read_parquet(resolve_output_dir(experiment, "gulf_stream") / "eddy_movement.parquet")
     table = pd.DataFrame(rows).merge(
         movement[identity_columns + ["movement", "birth_date", "death_date"]], on=identity_columns, how="left",
     )
@@ -89,13 +81,7 @@ def main(experiment: str) -> None:
     """Write gold/eddy_plankton_table.parquet through a temporary file, so a failed build leaves the prior table in place."""
     table = build_plankton_table(experiment)
     out_path = resolve_gold_dir(experiment, "eddy_plankton_table.parquet")
-    with NamedTemporaryFile(dir=out_path.parent, suffix=".parquet", delete=False) as temporary:
-        temporary_path = Path(temporary.name)
-    try:
-        table.to_parquet(temporary_path, index=False)
-        temporary_path.replace(out_path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
+    write_parquet_atomically(table, out_path)
     print(f"output_file: {out_path}\neddy_composites: {len(table)}")
 
 
