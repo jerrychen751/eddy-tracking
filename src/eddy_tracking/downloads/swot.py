@@ -4,7 +4,7 @@ import re
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -14,7 +14,8 @@ from scipy.ndimage import distance_transform_edt
 import xarray as xr
 
 from eddy_tracking.config import load_config, resolve_data_dir
-from eddy_tracking.downloads.auth import login_aviso, load_aviso_credentials
+from eddy_tracking.downloads.auth import AvisoCredentials, login_aviso, load_aviso_credentials
+from eddy_tracking.utils.files import write_netcdf_atomically
 
 
 # netCDF4/HDF5 serialization is not safe across downloader threads.
@@ -25,9 +26,7 @@ _NETCDF_IO_LOCK = Lock()
 class DownloadSettings:
     """Configuration and credentials for one SWOT download run."""
 
-    host: str
-    user: str
-    password: str = field(repr=False)
+    credentials: AvisoCredentials
     remote_dir: str
     local_dir: Path
     max_workers: int
@@ -43,9 +42,7 @@ def load_settings(experiment: str) -> DownloadSettings:
     credentials = load_aviso_credentials()
     cfg = load_config(experiment)
     return DownloadSettings(
-        host=credentials.host,
-        user=credentials.user,
-        password=credentials.password,
+        credentials=credentials,
         remote_dir=cfg["base"]["download"]["swot"]["ftp_dir"],
         local_dir=resolve_data_dir(cfg, "swot_dir"),
         max_workers=cfg["base"]["download"]["swot"]["max_workers"],
@@ -138,20 +135,12 @@ def _download_one(remote_path: str, settings: DownloadSettings) -> str:
         tmp_path = Path(tmp.name)
 
     try:
-        with login_aviso(settings.host, settings.user, settings.password) as ftp:
+        with login_aviso(settings.credentials) as ftp:
             ftp.cwd(settings.remote_dir)
             with tmp_path.open("wb") as temp_file:
                 ftp.retrbinary(f"RETR {filename}", temp_file.write)
         with _NETCDF_IO_LOCK:
-            _trim_file(
-                tmp_path,
-                local_path,
-                settings.longitude_range,
-                settings.latitude_range,
-                settings.filter_open_ocean,
-                settings.exclude_lon_range,
-                settings.exclude_lat_range,
-            )
+            _trim_file(tmp_path, local_path, settings)
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
         return (
@@ -166,36 +155,22 @@ def _download_one(remote_path: str, settings: DownloadSettings) -> str:
     )
 
 
-def _trim_file(
-    raw_path: Path,
-    out_path: Path,
-    longitude_range: tuple[float, float],
-    latitude_range: tuple[float, float],
-    filter_open_ocean: bool,
-    exclude_lon_range: tuple[float, float],
-    exclude_lat_range: tuple[float, float],
-) -> None:
+def _trim_file(raw_path: Path, out_path: Path, settings: DownloadSettings) -> None:
     """Install a trimmed output through a temporary file, then delete the raw input."""
-    temporary_path = out_path.with_suffix(".tmp.nc")
-    try:
-        with xr.open_dataset(raw_path) as dataset:
-            trimmed = dataset.sel(
-                longitude=slice(*longitude_range),
-                latitude=slice(*latitude_range),
-            )
-            if filter_open_ocean:
-                trimmed = mask_open_ocean(trimmed, exclude_lon_range, exclude_lat_range)
-            trimmed.to_netcdf(temporary_path)
-        temporary_path.replace(out_path)
-    except Exception:
-        temporary_path.unlink(missing_ok=True)
-        raise
+    with xr.open_dataset(raw_path) as dataset:
+        trimmed = dataset.sel(
+            longitude=slice(*settings.longitude_range),
+            latitude=slice(*settings.latitude_range),
+        )
+        if settings.filter_open_ocean:
+            trimmed = mask_open_ocean(trimmed, settings.exclude_lon_range, settings.exclude_lat_range)
+        write_netcdf_atomically(trimmed, out_path)
     raw_path.unlink()
 
 
 def download_files(settings: DownloadSettings) -> list[str]:
     print("status: listing_remote_files")
-    with login_aviso(settings.host, settings.user, settings.password) as ftp:
+    with login_aviso(settings.credentials) as ftp:
         remote_paths = [
             path for path in ftp.nlst(settings.remote_dir) if path.endswith(".nc")
         ]
