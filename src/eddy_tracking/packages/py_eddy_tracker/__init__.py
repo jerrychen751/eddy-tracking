@@ -24,6 +24,10 @@ Email: evanmason@gmail.com
 # GPLv3), with local fixes for numba 0.63 rejecting numpy.ma.MaskedArray at JIT
 # compilation: dataset/grid.py's setup_coordinates(), the has_value() call, and
 # the speed_coef_mean() call in eddy_identification() now pass plain ndarrays.
+# Backported from upstream 3.6.0: the Bessel kernel row fix in
+# convolve_filter_with_dynamic_kernel (98161f3), circle fits on evenly
+# oversampled contours via presampling_multiplier (c434372), and amplitude
+# stored at 0.1 mm instead of 1 mm (7e72eff).
 # Dropped upstream's CLI tools (appli/) and interactive viewer (gui.py), neither
 # used by this project. featured_tracking/ and data/ (upstream's own demo data)
 # are kept only for the example notebooks under examples/ and notebooks/ that
@@ -262,7 +266,7 @@ VAR_DESCR = dict(
         old_nc_name=["A"],
         nc_type="float32",
         output_type="uint16",
-        scale_factor=0.001,
+        scale_factor=0.0001,
         nc_dims=("obs",),
         nc_attr=dict(
             long_name="Amplitude",
