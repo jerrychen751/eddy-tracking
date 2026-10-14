@@ -17,6 +17,7 @@ from eddy_tracking.downloads.auth import (
     login_earthdata,
     open_obdaac_dataset,
 )
+from eddy_tracking.utils.files import write_netcdf_atomically
 
 
 def infer_lat_lon_names(ds: xr.Dataset) -> tuple[str, str]:
@@ -53,13 +54,7 @@ def subset_to_bbox_ds(
 
     subset = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
     subset.load()
-    tmp_path = output_path.with_suffix(".tmp.nc")
-    try:
-        subset.to_netcdf(tmp_path)
-        tmp_path.rename(output_path)
-    except BaseException:
-        tmp_path.unlink(missing_ok=True)
-        raise
+    write_netcdf_atomically(subset, output_path)
 
 
 def download_aqua_sst_8d_4km(

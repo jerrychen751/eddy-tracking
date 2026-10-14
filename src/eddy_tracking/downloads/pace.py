@@ -23,6 +23,7 @@ from eddy_tracking.downloads.auth import (
     login_earthdata,
     open_obdaac_dataset,
 )
+from eddy_tracking.utils.files import write_netcdf_atomically
 
 
 def search_pace_l3_granules(
@@ -77,14 +78,7 @@ def _subset_and_save(
     if "palette" in subset:
         subset = subset.drop_vars("palette")
     subset.load()
-    tmp_path = out_path.with_suffix(".tmp.nc")
-    encoding = {v: {"zlib": True, "complevel": 4} for v in subset.data_vars}
-    try:
-        subset.to_netcdf(tmp_path, encoding=encoding)
-        tmp_path.rename(out_path)
-    except BaseException:
-        tmp_path.unlink(missing_ok=True)
-        raise
+    write_netcdf_atomically(subset, out_path, encoding={v: {"zlib": True, "complevel": 4} for v in subset.data_vars})
 
 
 def download_pace_l3(
