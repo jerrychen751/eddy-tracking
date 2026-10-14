@@ -71,7 +71,7 @@ def collocate_chlor_a(
     rrs_dir = data_dir / "bronze" / "pace_l3_8d"
     # Group 1 is the date range start and group 2 the date range end: PACE_OCI.20240929_20241006.L3m.8D.BGC.V3_2.4km.nc
     bgc_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.BGC\.")
-    rrs_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.RRS\.")
+    rrs_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
     swot_files = index_swot_files_by_date(data_dir / "bronze" / "swot_l4_open_ocean")
     date_index = load_date_eddy_index(experiment)
     pixels = read_eddy_pixels(experiment)
