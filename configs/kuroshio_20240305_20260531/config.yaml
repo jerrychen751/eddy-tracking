@@ -79,11 +79,6 @@ eddy_track:
   # Discard tracks shorter than this (days)
   min_track_days: 30
 
-  # Post-tracking position smoothing (half-window sizes)
-  position_filter:
-    median_half_window: 1 # removes single-day outlier jumps
-    loess_half_window: 5 # smooths trajectory
-
 collocate_chlorophyll:
   min_coverage: 0.5
   min_pixels: 10

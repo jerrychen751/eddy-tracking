@@ -1,7 +1,7 @@
 """
 Track eddies across daily identification files using PET Correspondances.
 
-Builds frame-to-frame eddy correspondences from the daily .nc files produced by eddy_id.py, applies the configured minimum track duration, interpolates virtual observations, smooths positions, and writes merged tracks to Zarr.
+Builds frame-to-frame eddy correspondences from the daily .nc files produced by eddy_id.py, applies the configured minimum track duration, interpolates virtual observations, and writes merged tracks to Zarr.
 """
 
 import shutil
@@ -73,8 +73,6 @@ def track(
     virtual: int,
     max_speed_km_per_day: float,
     min_track_days: int,
-    median_half_window: int,
-    loess_half_window: int,
 ) -> None:
     """Track daily eddy IDs and replace the output after a temporary write."""
     polarity = track_dir.name
@@ -113,10 +111,7 @@ def track(
         tracked_observations.virtual == 1
     )
 
-    tracked_observations.position_filter(
-        median_half_window=median_half_window,
-        loess_half_window=loess_half_window,
-    )
+    # PET's position_filter is left out because it smooths only lon and lat, which moved centers off their own speed contours.
 
     output_path = track_dir / f"{polarity}_tracks.zarr"
     temporary_path = track_dir / f"{polarity}_tracks.tmp.zarr"
@@ -136,7 +131,6 @@ def main(experiment: str) -> None:
     """Track both polarities for an experiment and write their Zarr datasets."""
     cfg = load_config(experiment)
     tracking_cfg = cfg["eddy_track"]
-    filter_cfg = tracking_cfg["position_filter"]
 
     for polarity in ("anticyclone", "cyclone"):
         id_dir = resolve_output_dir(experiment, "eddy_id", polarity)
@@ -148,8 +142,6 @@ def main(experiment: str) -> None:
             virtual=tracking_cfg["virtual"],
             max_speed_km_per_day=tracking_cfg["max_speed_km_per_day"],
             min_track_days=tracking_cfg["min_track_days"],
-            median_half_window=filter_cfg["median_half_window"],
-            loess_half_window=filter_cfg["loess_half_window"],
         )
 
 
