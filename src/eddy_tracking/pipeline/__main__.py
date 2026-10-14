@@ -20,7 +20,8 @@ from datetime import datetime
 from eddy_tracking.config import PROJECT_ROOT
 
 # A stage name resolves to a module inside _run_stage, or else to eddy_tracking.pipeline.<stage>: eddy_id -> eddy_tracking.pipeline.eddy_id.
-DEFAULT_STAGES = [
+# Canonical run order used for explicit stage lists too.
+VALID_STAGES = [
     "download_swot",
     "download_pace",
     "download_sst_sss",
@@ -30,15 +31,18 @@ DEFAULT_STAGES = [
     "collocate_pace",
     "run_sdp",
     "gulf_stream",
+    "collocate_chlorophyll",
     "collocate_plankton",
     "eddy_dynamics",
     "background",
     "build_gold_table",
 ]
 
-# Canonical run order used for explicit stage lists too.
-VALID_STAGES = DEFAULT_STAGES.copy()
-VALID_STAGES.insert(VALID_STAGES.index("gulf_stream") + 1, "collocate_chlorophyll")
+# These run only when named, or when --from starts at one of them.
+DEFAULT_STAGES = [
+    stage for stage in VALID_STAGES
+    if stage not in {"collocate_chlorophyll"}
+]
 
 PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss", "download_cmems"}
 
@@ -119,26 +123,7 @@ def _resolve_stages(
 
     Raises ``SystemExit`` when a stage name is unknown.
     """
-    if from_stage:
-        if from_stage not in VALID_STAGES:
-            print(
-                "status: error\n"
-                "reason: unknown_stage\n"
-                f"stage: {from_stage}\n"
-                f"valid_stages: {', '.join(VALID_STAGES)}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        start_idx = VALID_STAGES.index(from_stage)
-        return [
-            stage for stage in VALID_STAGES[start_idx:]
-            if stage in DEFAULT_STAGES or stage == from_stage
-        ]
-
-    if not args_stages:
-        return list(DEFAULT_STAGES)
-
-    for stage in args_stages:
+    for stage in [from_stage] if from_stage else args_stages:
         if stage not in VALID_STAGES:
             print(
                 "status: error\n"
@@ -148,6 +133,16 @@ def _resolve_stages(
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    if from_stage:
+        start_idx = VALID_STAGES.index(from_stage)
+        return [
+            stage for stage in VALID_STAGES[start_idx:]
+            if stage in DEFAULT_STAGES or stage == from_stage
+        ]
+
+    if not args_stages:
+        return list(DEFAULT_STAGES)
     return args_stages
 
 
