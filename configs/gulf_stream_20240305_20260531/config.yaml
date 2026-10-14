@@ -3,6 +3,7 @@
 # 2. time_of_year_cos and time_of_year_sin represent the annual cycle as cos/sin of 2*pi*days/365, with days counted from January 1.
 # 3. The ocean mask excludes the Great Lakes box, lon [-81,-75] and lat [40,44]. It keeps cells at least 8 grid cells from invalid data.
 # Apply the ocean mask to the downloaded SWOT data before eddy identification and all derived outputs.
+# 4. SSH comes from AVISO through 2025-12-31 and from the Copernicus near-real-time maps after it, interpolated onto the AVISO grid and given the AVISO ocean mask.
 
 base:
 
@@ -15,7 +16,7 @@ base:
   time:
     # SWOT SSH date range for eddy detection/tracking. Starts ~11 months before the PACE
     # date range so eddy births are observed and age_frac is not truncated at the edge.
-    eddy_date_range: ["2023-03-28", "2025-12-31"]
+    eddy_date_range: ["2023-03-28", "2026-10-10"]
     # PACE Rrs + ancillary date range: earliest PACE composite through May 2026.
     rrs_date_range: ["2024-03-05", "2026-05-31"]
 
@@ -40,6 +41,14 @@ base:
       exclude_box:
         lon_range: [-81, -75]
         lat_range: [40, 44]
+
+    cmems_ssh:
+      # Copernicus near-real-time DUACS L4 from the nadir altimeters and the SWOT swath, daily at 0.125 degree, 2025-10-28 to
+      # 2026-10-10. It continues the AVISO record from the day after its last map. Over the 62 shared days the two differ by
+      # 1.6 cm RMS in SLA, less than AVISO changes from one day to the next (2.2 cm).
+      dataset_id: "cmems_obs-sl_glo_phy-ssh_nrt_demo-allsat-swos-l4-duacs-0.125deg_P1D-i"
+      dataset_version: "202511"
+      date_range: ["2026-01-01", "2026-10-10"]
 
     pace:
       temporal_resolution: "8D"
@@ -96,7 +105,7 @@ collocate_pace:
 
   # Keep only eddy-days within the PACE and SSH overlap. Eddies are tracked over the earlier
   # eddy_date_range, but collocation should not retain eddy-days outside rrs_date_range.
-  date_range: ["2024-03-05", "2025-12-31"]
+  date_range: ["2024-03-05", "2026-05-31"]
 
   # Restrict to specific track IDs (omit to process all)
   # track_ids: [5, 12, 20]

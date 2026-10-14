@@ -14,6 +14,7 @@ The pipeline uses daily DUACS-MIOST Level 4 sea surface height (SSH), which comb
 
 **Data sources:**
 - DUACS-MIOST L4 SSH, including SWOT: AVISO FTP (`dt_global_allsat_phy_l4_*.nc`)
+- DUACS near-real-time L4 SSH, including the SWOT swath, for the days after the AVISO record: Copernicus Marine (`cmems_obs-sl_glo_phy-ssh_nrt_demo-allsat-swos-l4-duacs-0.125deg_P1D-i`)
 - PACE OCI L3 mapped AOP: NASA Earthdata (`PACE_OCI_L3M_AOP`, 4 km; eight-day composites in the canonical experiment)
 - PACE OCI L3 mapped BGC: direct CHL source (`chlor_a`); `collocate_chlorophyll.py` validates inputs and calculates eddy means without SDP
 - SST: AQUA MODIS 8-day composites via earthaccess search and OPeNDAP
@@ -71,6 +72,8 @@ downloads keyed by dataset, `silver/` is per-experiment processed stages, and
 
 The configuration selects `swot_l4_open_ocean` as `swot_dir` for the canonical experiment. Its `bronze/` directory contains all shared inputs directly.
 
+The AVISO SSH record ends on 2025-12-31. The canonical experiment continues it to 2026-10-10 with the Copernicus Marine near-real-time maps named in `base.download.cmems_ssh`. The `download_cmems_ssh` stage, part of the default run, reads those maps for the region, interpolates them linearly onto the AVISO grid (the Copernicus cell centers sit half a cell off it), derives `relative_vorticity` from the anomaly velocities, applies the `open_ocean` label of the AVISO files, and writes one file per day into `swot_dir` in the AVISO layout, so every later stage reads both sources alike. It runs after `download_swot`, because it takes the grid and the label from the newest AVISO file, and an experiment without `base.download.cmems_ssh` skips it. To run it alone: `uv run python -m eddy_tracking.pipeline gulf_stream_20240305_20260531 download_cmems_ssh`. It reads the public Copernicus store without a login. Over the 62 days both sources cover (2025-10-28 to 2025-12-31) they differ by 1.6 cm RMS in sea level anomaly, less than the AVISO maps change from one day to the next (2.2 cm), and 97% or more of the AVISO eddies of at least 5 cm amplitude have a Copernicus eddy within one speed radius on the same day.
+
 PACE and SST first request a remote subset. If that request fails, the stage uses Earthaccess to download each remaining global file and subset it locally. The stage deletes each temporary global file before the next download. It skips completed subset files on another run.
 
 `run_sdp.max_workers` controls the number of SDP processes and defaults to one. The canonical experiment uses four processes. Each process loads the temperature and salinity grids once. Set `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1`, and `VECLIB_MAXIMUM_THREADS=1` to prevent extra numerical-library threads in each process.
@@ -88,6 +91,9 @@ Bronze downloads
 ----------------
 python -m eddy_tracking.downloads.swot <experiment>
   -> data/{dataset}/bronze/{swot_dir}/*.nc
+
+python -m eddy_tracking.downloads.cmems_ssh <experiment>   (an experiment with base.download.cmems_ssh; after downloads.swot)
+  -> data/{dataset}/bronze/{swot_dir}/nrt_global_allsat_swos_phy_l4_<date>.nc
 
 python -m eddy_tracking.downloads.pace <experiment>
   -> data/{dataset}/bronze/pace_l3_8d/*.nc

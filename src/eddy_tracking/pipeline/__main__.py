@@ -26,6 +26,8 @@ VALID_STAGES = [
     "download_pace",
     "download_sst_sss",
     "download_cmems",
+    # Not a parallel download: it reads the grid and the open_ocean label from the AVISO files that download_swot writes.
+    "download_cmems_ssh",
     "eddy_id",
     "eddy_track",
     "collocate_pace",
@@ -68,6 +70,7 @@ def _run_stage(experiment: str, stage: str) -> None:
             "eddy_tracking.downloads.sss",
         ),
         "download_cmems": ("eddy_tracking.downloads.cmems",),
+        "download_cmems_ssh": ("eddy_tracking.downloads.cmems_ssh",),
     }
     modules = stage_modules.get(stage, (f"eddy_tracking.pipeline.{stage}",))
 
