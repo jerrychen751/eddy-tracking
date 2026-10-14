@@ -23,6 +23,7 @@ from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 from scipy.spatial.distance import squareform
 
 from eddy_tracking.config import METADATA_COLS, resolve_output_dir
+from eddy_tracking.validation.quality import clip_sdp_pixels
 
 DISPLAY_NAMES = {
     "DV chla": "DV Chl-a",
@@ -78,7 +79,7 @@ def iter_eddy_files(experiment: str) -> Iterator[tuple[Path, pd.DataFrame]]:
         )
         for fp in files:
             df = pd.read_parquet(fp)
-            yield fp, df.loc[df["inside_contour"]]
+            yield fp, clip_sdp_pixels(df.loc[df["inside_contour"]])
 
 
 def get_pigment_cols(df: pd.DataFrame) -> list[str]:

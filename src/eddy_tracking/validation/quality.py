@@ -5,6 +5,8 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from eddy_tracking.packages.sdp.prediction import SDP_PIGMENT_COLUMNS
+
 
 # Bailey and Werdell (2006), section 2.2.4, excludes these conditions from radiometric validation pixels.
 QUALITY_L2_FLAGS: tuple[str, ...] = (
@@ -120,6 +122,12 @@ def keep_valid_sdp_rows(
         f"rows_dv_chla_not_below_tchla: {int(dv_chla_not_below_tchla.sum()):,}"
     )
     return pigment_table.loc[valid].reset_index(drop=True)
+
+
+def clip_sdp_pixels(pixels: pd.DataFrame) -> pd.DataFrame:
+    # Pixel files keep negative SDP predictions so that a mean over pixels can cancel the noise; clip here only where a single pixel is read as a concentration, and clip a mean after averaging instead
+    pigment_columns = [column for column in SDP_PIGMENT_COLUMNS if column in pixels]
+    return pixels.assign(**{column: pixels[column].clip(lower=0) for column in pigment_columns})
 
 
 def mask_plankton_groups_above_chl(

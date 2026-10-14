@@ -58,7 +58,7 @@ def run_sdp(
     """
     Predict pigment concentrations from Rrs spectra using trained SDP model.
 
-    Computes Rrs residuals, takes 2nd derivative, then applies ensemble of 100 model permutations. Takes median over permutations. Negative predictions clipped to zero.
+    Computes Rrs residuals, takes 2nd derivative, then applies ensemble of 100 model permutations. Takes median over permutations. Negative predictions are kept, so clip to zero after averaging pixels or when reading a single pixel.
 
     Args:
         rrs: Above-surface remote-sensing reflectance in sr^-1, with integer wavelength columns (400..700), each row is a spectrum.
@@ -120,8 +120,7 @@ def run_sdp(
 
         median_run = np.median(run_vals_all, axis=1)
 
-        median_run[median_run < 0] = 0
-
+        # Kept negative: noise around a small concentration cancels in a mean only if both signs survive
         sdp[:, p] = median_run
 
     output_columns = [_PIGMENT_DISPLAY_NAMES[name] for name in sdp_names]

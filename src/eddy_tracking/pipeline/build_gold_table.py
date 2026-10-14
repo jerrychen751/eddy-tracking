@@ -29,8 +29,8 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
             pigments = pd.read_parquet(pigment_path)
             pigments = pigments.loc[pigments["inside_contour"]]
             for date, group in pigments.groupby("date"):
-                # SDP sets a negative prediction to zero, so a zero marks an interior pixel where the Tchla retrieval hit that floor
-                tchla_zero = group["T chla"].eq(0)
+                # SDP keeps negative predictions, so a pixel at or below zero marks an interior pixel where the Tchla retrieval fell to zero or below
+                tchla_zero = group["T chla"].le(0)
                 row = {
                     "track_id": int(group["track_id"].iloc[0]),
                     "date": pd.Timestamp(date),  # pyright: ignore[reportArgumentType]
@@ -43,8 +43,9 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
                     "n_eddy_pixels": int(len(group)),
                 }
                 for source_name, column_suffix in PIGMENTS.items():
-                    row[f"eddy_mean_{column_suffix}"] = float(
-                        group[source_name].mean()
+                    # Clip once after averaging, so negative and positive pixel noise cancel first
+                    row[f"eddy_mean_{column_suffix}"] = max(
+                        float(group[source_name].mean()), 0.0
                     )
                 rows.append(row)
     return pd.DataFrame(rows)

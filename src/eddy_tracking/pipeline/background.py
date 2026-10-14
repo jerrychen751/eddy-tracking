@@ -56,7 +56,7 @@ def compute_background_means(
     pigments_df, _ = run_sdp_on_pace_l3(df, sst_df, sss_df)
     if pigments_df.empty:
         return None
-    means = {f"bg_mean_{canon}": float(pigments_df[raw].mean()) for raw, canon in PIGMENTS.items()}
+    means = {f"bg_mean_{canon}": max(float(pigments_df[raw].mean()), 0.0) for raw, canon in PIGMENTS.items()}
     means["n_bg_pixels"] = len(pigments_df)
     return means
 
