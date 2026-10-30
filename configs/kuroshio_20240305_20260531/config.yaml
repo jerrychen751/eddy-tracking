@@ -18,6 +18,9 @@ base:
     eddy_date_range: ["2023-03-28", "2025-12-31"]
     # PACE Rrs + ancillary date range: earliest PACE composite through May 2026.
     rrs_date_range: ["2024-03-05", "2026-05-31"]
+    # Analysis period: the dates that the SSH, PACE and Copernicus plankton records all cover. Notebooks keep an
+    # eddy whose track overlaps it and use only that eddy's composites inside it (eddy_tracking.utils.analysis_period).
+    analysis_date_range: ["2024-03-05", "2025-12-31"]
 
   # Paths resolve to data/<dataset>/<dir>/
   data:
