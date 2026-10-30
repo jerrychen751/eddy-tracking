@@ -4,7 +4,7 @@ Research pipeline for Gulf Stream eddy tracks and PACE OCI chlorophyll, pigment,
 
 ## Research direction
 
-CHL denotes near-surface chlorophyll-a concentration. The current questions concern CHL change with eddy age, radial pigment composition, and evidence for lateral exchange in southbound cyclones and northbound anticyclones. The [research scope](docs/research_scope.md) defines the hypotheses, source-water distinctions, verified pipeline capability, and evidence requirements.
+CHL denotes near-surface chlorophyll-a concentration. The current questions concern CHL change with eddy age, radial pigment composition, and evidence for lateral exchange in cyclones that cross the Gulf Stream from north to south and anticyclones that cross it from south to north.
 
 The paragraph and figure plan is in the Obsidian note `Work Vault/Work/1. GT Oceanography Lab/Manuscript Planning.md`. The current pipeline supplies interior pigment estimates and per-pixel pigment retrievals out to `collocate_pace.max_radius` speed radii of each eddy center. The proposed paper also needs local reference water and cohort validation.
 
@@ -54,7 +54,7 @@ FTP_PASSWORD = "<your password>"
 
 ## Running the pipeline
 
-The canonical experiment is `gulf_stream_20240305_20260531`. The [adopted methods](docs/research_scope.md#adopted-experiment-methods) define its ocean mask, speed contour, and annual cycle variables.
+The canonical experiment is `gulf_stream_20240305_20260531`.
 
 Each experiment has a config directory under `configs/<experiment>/`:
 
@@ -246,7 +246,7 @@ data/             per-experiment medallion layers (gitignored, regenerable):
     silver/       processed stages (eddy_id, eddy_track, collocate_pace,
                   pigments, gulf_stream, eddy_dynamics)
     gold/         analysis-ready eddy-pigment and eddy-plankton tables, and the
-                  axis-profile and ring tables that research_paper/eddy_evolution.ipynb caches
+                  plankton ring table that research_paper/figures.ipynb reads
 src/eddy_tracking/
   config.py       config loader, medallion path helpers, METADATA_COLS
   downloads/      importable SWOT, PACE, SST, SSS, and Copernicus Marine download modules
@@ -263,5 +263,4 @@ research_paper/   paper figure and analysis notebooks
 research_updates/ dated advisor update notebooks
 conferences/      poster notebooks: space_week.ipynb and se_bgc.ipynb
 slurm/            HPC job script
-docs/             research scope, case-study eddies, and the SDP validity notes (sdp_validity/)
 ```
