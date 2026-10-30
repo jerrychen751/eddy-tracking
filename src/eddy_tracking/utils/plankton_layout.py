@@ -22,7 +22,7 @@ SIZE_CLASS_GRID_SHAPE = (max(row for row, _, _ in SIZE_CLASS_CELLS) + 1, len(SIZ
 
 
 # The row of the lowest panel in each column, which carries that column's x tick labels
-def lowest_rows(cells: list[tuple[int, int, str]]) -> dict[int, int]:
+def find_lowest_rows(cells: list[tuple[int, int, str]]) -> dict[int, int]:
     lowest: dict[int, int] = {}
     for row, column, _ in cells:
         lowest[column] = max(row, lowest.get(column, row))
@@ -30,6 +30,6 @@ def lowest_rows(cells: list[tuple[int, int, str]]) -> dict[int, int]:
 
 
 # Grid positions without a panel, in reading order; the first one holds the legend
-def spare_cells(cells: list[tuple[int, int, str]], shape: tuple[int, int]) -> list[tuple[int, int]]:
+def find_spare_cells(cells: list[tuple[int, int, str]], shape: tuple[int, int]) -> list[tuple[int, int]]:
     used = {(row, column) for row, column, _ in cells}
     return [(row, column) for row in range(shape[0]) for column in range(shape[1]) if (row, column) not in used]

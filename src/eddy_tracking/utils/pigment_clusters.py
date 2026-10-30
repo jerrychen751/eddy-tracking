@@ -114,7 +114,7 @@ def label_clusters(clusters: pd.Series) -> tuple[PigmentCluster, ...]:
     return tuple(result)
 
 
-def resolved_pigment_clusters(data_dir: Path, cfg: dict[str, Any], cut_height: float = CLUSTER_CUT_HEIGHT) -> tuple[PigmentCluster, ...]:
+def resolve_pigment_clusters(data_dir: Path, cfg: dict[str, Any], cut_height: float = CLUSTER_CUT_HEIGHT) -> tuple[PigmentCluster, ...]:
     correlation = correlate_ratios(load_target_composites(data_dir, cfg))
     _, tree = build_ward_linkage(correlation.to_numpy())
     clusters = pd.Series(fcluster(tree, t=cut_height, criterion="distance"), index=correlation.index, name="cluster")
