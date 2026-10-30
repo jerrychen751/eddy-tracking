@@ -141,7 +141,7 @@ def load_track_observations(experiment: str) -> pd.DataFrame:
         frames.append(pd.DataFrame({
             "polarity": polarity,
             "track_id": tracked.track[keep].astype(int),
-            "date": pd.to_datetime(days),
+            "date": pd.to_datetime(days).as_unit("ns"),
             "center_lon": (longitudes + 180) % 360 - 180,
             "center_lat": latitudes,
             "radius_km": tracked.radius_s[keep] / 1000.0,

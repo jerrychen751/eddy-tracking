@@ -2,8 +2,8 @@
   "exclude": ["**/__pycache__", ".venv", "archive", "data", "src/eddy_tracking/packages"],
   "venvPath": ".",
   "venv": ".venv",
-  "extraPaths": [".", "src"],
-  "pythonVersion": "3.10",
+  "extraPaths": [".", "src", "scripts"],
+  "pythonVersion": "3.13",
   "typeCheckingMode": "standard",
   "reportMissingTypeStubs": false
 }

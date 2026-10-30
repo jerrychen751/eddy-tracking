@@ -20,7 +20,7 @@ from numpy import (
     empty,
     errstate,
     exp,
-    float_,
+    float64,
     floor,
     histogram2d,
     int_,
@@ -38,7 +38,7 @@ from numpy import (
     percentile,
     pi,
     radians,
-    round_,
+    round as round_,
     sin,
     sinc,
     where,
@@ -1016,7 +1016,7 @@ class GridDataset(object):
         local_data[data.mask] = 0
 
         v = gaussian_filter(local_data, sigma=sigma, mode=mode)
-        w = gaussian_filter(float_(~data.mask), sigma=sigma, mode=mode)
+        w = gaussian_filter(float64(~data.mask), sigma=sigma, mode=mode)
 
         with errstate(invalid="ignore"):
             return ma.array(v / w, mask=w == 0)

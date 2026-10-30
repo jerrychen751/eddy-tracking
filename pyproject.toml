@@ -6,40 +6,43 @@ build-backend = "hatchling.build"
 name = "eddy-tracking"
 version = "0.1.0"
 description = "Mesoscale eddy tracking in the Gulf Stream with PACE OCI pigment collocation."
-requires-python = ">=3.10,<3.11"
+requires-python = ">=3.13,<3.14"
 dependencies = [
-    "numpy==1.26.4", # <2 keeps numba 0.63 compatible
-    "scipy==1.15.3",
-    "pandas==2.3.3",
-    "xarray==2025.6.1",
-    "netcdf4==1.7.4",
-    "cftime==1.6.5",
-    "zarr==2.18.3", # py-eddy-tracker requires <3.0
-    "pyarrow==22.0.0",
-    "dask==2026.1.1",
-    "bottleneck==1.4.2",
-    "cf-xarray==0.10.6",
-    "matplotlib==3.7.5", # py-eddy-tracker requires <3.8
-    "contourpy==1.3.2",
-    "cartopy==0.25.0",
-    "pyproj==3.7.1",
-    "shapely==2.0.7",
-    "geopandas==1.1.2",
-    "earthaccess==0.14.0",
-    "harmony-py==1.3.3",
-    "copernicusmarine==2.3.0",
+    "numpy==2.5.4", # numba 0.68 supports numpy below 2.6
+    "scipy==1.18.1",
+    "pandas==3.0.6",
+    "xarray==2026.9.0",
+    "netcdf4==1.7.5",
+    "cftime==1.6.6.1",
+    "zarr==3.4.1",
+    "pyarrow==26.0.0",
+    "dask==2026.8.0",
+    "bottleneck==1.6.0",
+    "cf-xarray==0.11.3",
+    "matplotlib==3.11.2",
+    "contourpy==1.4.0",
+    "cartopy==0.26.0",
+    "pyproj==3.8.0",
+    "shapely==2.2.0",
+    "geopandas==1.2.0",
+    "earthaccess==0.19.0",
+    "harmony-py==1.8.0",
+    "copernicusmarine==2.5.0",
     "h5py==3.16.0", # copernicusmarine writes NetCDF through h5netcdf, which no longer requires h5py itself
-    "s3fs==2026.2.0",
-    "requests==2.32.5",
-    "tqdm==4.67.3",
-    "python-dotenv==1.1.1",
+    "s3fs==2026.9.0",
+    "requests==2.34.2",
+    "tqdm==4.70.1",
+    "python-dotenv==1.2.4",
     "pyyaml==6.0.3",
-    "scikit-learn", # used by clustering/RF analysis
-    "numba==0.63.1",
-    "opencv-python==4.11.0.86",
-    "pint==0.24.4",
+    "scikit-learn==1.9.1", # used by clustering/RF analysis
+    "numba==0.68.0",
+    "opencv-python==5.0.0.93",
+    "pint==0.26.2",
     "polygon3==3.0.9.1",
-    "statsmodels>=0.15.0",
+    "statsmodels==0.15.0",
+    "gsw==3.6.23",
+    "argopy==1.5.0",
+    "pip==26.2.2", # argopy runs 'python -m pip list' when imported and prints an error to stderr if pip is missing
 ]
 
 [dependency-groups]

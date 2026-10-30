@@ -8,8 +8,9 @@ from io import BufferedReader, BytesIO
 from tarfile import ExFileObject
 from tokenize import TokenError
 
+import numcodecs
 import zarr
-from matplotlib.cm import get_cmap
+from matplotlib import colormaps
 from matplotlib.collections import PolyCollection
 from matplotlib.colors import Normalize
 from netCDF4 import Dataset
@@ -29,7 +30,7 @@ from numpy import (
     floor,
     histogram,
     histogram2d,
-    in1d,
+    isin,
     isnan,
     linspace,
     ma,
@@ -683,13 +684,13 @@ class EddiesObservations(object):
 
     @staticmethod
     def zarr_dimension(filename):
-        if isinstance(filename, zarr.storage.MutableMapping):
+        if isinstance(filename, zarr.Group):
             h = filename
         else:
-            h = zarr.open(filename)
+            h = zarr.open_group(filename, mode="r")
         dims = list()
         for varname in h:
-            dims.extend(list(getattr(h, varname).shape))
+            dims.extend(list(h[varname].shape))
         return set(dims)
 
     @classmethod
@@ -713,7 +714,7 @@ class EddiesObservations(object):
         filename_ = (
             filename.filename if isinstance(filename, ExFileObject) else filename
         )
-        if isinstance(filename, zarr.storage.MutableMapping):
+        if isinstance(filename, zarr.Group):
             return cls.load_from_zarr(filename, **kwargs)
         if isinstance(filename, (bytes, str)):
             end = b".zarr" if isinstance(filename_, bytes) else ".zarr"
@@ -751,15 +752,15 @@ class EddiesObservations(object):
         """
         # FIXME
         array_dim = -1
-        if isinstance(filename, zarr.storage.MutableMapping):
+        if isinstance(filename, zarr.Group):
             h_zarr = filename
         else:
             if not isinstance(filename, str):
                 filename = filename.astype(str)
-            h_zarr = zarr.open(filename)
+            h_zarr = zarr.open_group(filename, mode="r")
         var_list = cls.build_var_list(list(h_zarr.keys()), remove_vars, include_vars)
 
-        nb_obs = getattr(h_zarr, var_list[0]).shape[0]
+        nb_obs = h_zarr[var_list[0]].shape[0]
         dims = list(cls.zarr_dimension(filename))
         if len(dims) == 2 and nb_obs in dims:
             # FIXME must be investigated, in zarr no dimensions name (or could be add in attr)
@@ -1599,7 +1600,7 @@ class EddiesObservations(object):
     ):
         kwargs_variable["shape"] = data.shape
         kwargs_variable["compressor"] = (
-            zarr.Blosc(cname="zstd", clevel=2) if compressor is None else compressor
+            numcodecs.Blosc(cname="zstd", clevel=2) if compressor is None else compressor
         )
         kwargs_variable["filters"] = list()
         store_dtype = kwargs_variable.pop("store_dtype", None)
@@ -1607,7 +1608,7 @@ class EddiesObservations(object):
             if add_offset is None:
                 add_offset = 0
             kwargs_variable["filters"].append(
-                zarr.FixedScaleOffset(
+                numcodecs.FixedScaleOffset(
                     offset=add_offset,
                     scale=1 / scale_factor,
                     dtype=kwargs_variable["dtype"],
@@ -1625,7 +1626,9 @@ class EddiesObservations(object):
             kwargs_variable["chunks"] = (chunck_size // second_dim, second_dim)
 
         kwargs_variable.pop("dimensions")
-        v = handler_zarr.create_dataset(**kwargs_variable)
+        # zarr 3 takes the v2 compressor as a one-element compressors list
+        kwargs_variable["compressors"] = [kwargs_variable.pop("compressor")]
+        v = handler_zarr.create_array(**kwargs_variable)
         attrs = list(attr_variable.keys())
         attrs.sort()
         for attr in attrs:
@@ -1671,7 +1674,8 @@ class EddiesObservations(object):
             zarr_flag = True
         logger.info("Store in %s (%d observations)", filename, len(self))
         if zarr_flag:
-            handler = zarr.open(filename, "w")
+            # Version 2 format, so environments still on zarr 2 read the stores this writes
+            handler = zarr.open_group(filename, mode="w", zarr_format=2)
             self.to_zarr(handler, **kwargs)
         else:
             nc_format = kwargs.pop("format", "NETCDF4")
@@ -1834,7 +1838,7 @@ class EddiesObservations(object):
             verts.append(create_vertice(x_, y_))
         if "facecolors" not in kwargs:
             kwargs = kwargs.copy()
-            cmap = get_cmap(cmap, lut)
+            cmap = colormaps.get_cmap(cmap) if lut is None else colormaps.get_cmap(cmap).resampled(lut)
             v = self.parse_varname(varname) * factor
             if vmin is None:
                 vmin = v.min()
@@ -1901,7 +1905,7 @@ class EddiesObservations(object):
                 return filter1[filter2[filter1]]
             # index case
             else:
-                return filter1[in1d(filter1, filter2)]
+                return filter1[isin(filter1, filter2)]
 
     def merge_filters(self, *filters):
         """

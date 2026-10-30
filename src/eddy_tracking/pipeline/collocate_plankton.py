@@ -55,7 +55,7 @@ def build_plankton_table(experiment: str) -> pd.DataFrame:
                 continue
             row = {
                 "polarity": eddy.polarity, "track_id": eddy.track_id,
-                "date": pd.Timestamp(start + (end - start) / 2),
+                "date": pd.Timestamp(start + (end - start) / 2).as_unit("ns"),
                 "center_lon": eddy.center_lon, "center_lat": eddy.center_lat,
                 "n_pixels": n_inside, "valid_frac": float(chl_valid.mean()),
             }

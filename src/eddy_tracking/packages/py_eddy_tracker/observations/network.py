@@ -14,7 +14,7 @@ from numpy import (
     bool_,
     concatenate,
     empty,
-    in1d,
+    isin,
     ones,
     uint16,
     uint32,
@@ -1253,7 +1253,7 @@ class NetworkObservations(GroupEddiesObservations):
         values = self.segment_track_array if absolute else "segment"
         keep = ones(values.max() + 1, dtype="bool")
         v = unique(values)
-        keep[v] = in1d(v, segments)
+        keep[v] = isin(v, segments)
         for i, b0, b1 in self.iter_on(values):
             if not keep[b0]:
                 mask[i] = False

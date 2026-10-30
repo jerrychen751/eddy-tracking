@@ -153,7 +153,7 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
                 continue
             rows.append({
                 "polarity": eddy.polarity, "track_id": eddy.track_id,
-                "date": pd.Timestamp(start + (end - start) / 2),
+                "date": pd.Timestamp(start + (end - start) / 2).as_unit("ns"),
                 "eddy_chl_mean": float(valid_values.mean()),
                 "n_chl_pixels": len(valid_values), "valid_frac": coverage,
             })

@@ -27,7 +27,7 @@ This project uses [uv](https://docs.astral.sh/uv/) to manage its Python environm
 Install uv once with `curl -LsSf https://astral.sh/uv/install.sh | sh`, then from the repo root run:
 
 ```bash
-uv sync # build .venv from the locked dependencies (Python 3.10)
+uv sync # build .venv from the locked dependencies (Python 3.13)
 cp .env.example .env # then fill in your AVISO FTP and Copernicus Marine credentials
 ```
 
@@ -42,7 +42,7 @@ so it does not rely on PET's CLI filename template path.
 
 Install uv the same way on Phoenix (its login node can reach PyPI and GitHub), place this repo under `~/projects/`, then run `uv sync --no-dev`.
 The `--no-dev` flag skips the Jupyter tooling that batch jobs do not need.
-uv downloads its own Python 3.10, so the system Python version on the cluster does not matter.
+uv downloads its own Python 3.13, so the system Python version on the cluster does not matter.
 Keep large data and outputs in the group project space (`/storage/project/r-ldove6-0/<gt_username>`) or scratch, not in the 20 GB home directory.
 
 The `.env` file must contain:

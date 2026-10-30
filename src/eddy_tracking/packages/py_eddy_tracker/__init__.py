@@ -38,7 +38,7 @@ Email: evanmason@gmail.com
 import logging
 from argparse import ArgumentParser
 
-import zarr
+import numcodecs
 
 from ._version import get_versions
 
@@ -317,7 +317,7 @@ VAR_DESCR = dict(
         output_type="u2",
         scale_factor=0.0001,
         nc_type="f4",
-        # filters=[zarr.Delta('u2')],
+        # filters=[numcodecs.Delta('u2')],
         nc_dims=("obs", "NbSample"),
         nc_attr=dict(
             long_name="Radial Speed Profile",
@@ -447,7 +447,7 @@ VAR_DESCR = dict(
         nc_name="effective_contour_longitude",
         old_nc_name=["contour_lon_e"],
         nc_type="f4",
-        filters=[zarr.Delta("i2")],
+        filters=[numcodecs.Delta("i2")],
         output_type="i2",
         scale_factor=0.01,
         add_offset=180.0,
@@ -464,7 +464,7 @@ VAR_DESCR = dict(
         nc_name="effective_contour_latitude",
         old_nc_name=["contour_lat_e"],
         nc_type="f4",
-        filters=[zarr.Delta("i2")],
+        filters=[numcodecs.Delta("i2")],
         output_type="i2",
         scale_factor=0.01,
         nc_dims=("obs", "NbSample"),
@@ -491,7 +491,7 @@ VAR_DESCR = dict(
         nc_name="speed_contour_longitude",
         old_nc_name=["contour_lon_s"],
         nc_type="f4",
-        filters=[zarr.Delta("i2")],
+        filters=[numcodecs.Delta("i2")],
         output_type="i2",
         scale_factor=0.01,
         add_offset=180.0,
@@ -508,7 +508,7 @@ VAR_DESCR = dict(
         nc_name="speed_contour_latitude",
         old_nc_name=["contour_lat_s"],
         nc_type="f4",
-        filters=[zarr.Delta("i2")],
+        filters=[numcodecs.Delta("i2")],
         output_type="i2",
         scale_factor=0.01,
         nc_dims=("obs", "NbSample"),

@@ -6,7 +6,7 @@ import copernicusmarine
 import numpy as np
 import pandas as pd
 import xarray as xr
-from zarr.storage import FSStore
+from zarr.storage import FsspecStore
 
 from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.preprocess.streamline import KM_PER_DEG_LAT
@@ -42,8 +42,11 @@ def main(experiment: str) -> None:
     # "arco-geo-series" is the store chunked one day at a time: https://s3.waw3-1.cloudferro.com/<bucket>/arco/<product>/<dataset>_<version>/timeChunked.zarr
     [store_url] = [str(service.uri) for service in version.parts[0].services if service.service_name == "arco-geo-series"]
     endpoint, _, store_path = store_url.removeprefix("https://").partition("/")
-    # The bucket is public. It answers 403 for a day it does not hold; s3fs raises that as PermissionError, which zarr treats as a missing chunk and fills with NaN
-    store = FSStore(f"s3://{store_path}", anon=True, client_kwargs={"endpoint_url": f"https://{endpoint}"})
+    # The bucket is public. It answers 403 for a day it does not hold; s3fs raises that as PermissionError, which allowed_exceptions makes zarr treat as a missing chunk and fill with NaN
+    store = FsspecStore.from_url(
+        f"s3://{store_path}", storage_options={"anon": True, "client_kwargs": {"endpoint_url": f"https://{endpoint}"}}, read_only=True,
+        allowed_exceptions=(FileNotFoundError, IsADirectoryError, NotADirectoryError, PermissionError),
+    )
     maps = xr.open_zarr(store, consolidated=True)[["sla", "adt", "ugos", "vgos", "ugosa", "vgosa"]]
     # Half a degree past the region on each side, so every AVISO grid point has Copernicus cells around it
     maps = maps.sel(
