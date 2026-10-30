@@ -20,9 +20,11 @@ def download_cmems_dataset(
     out_dir: Path,
     dataset_id: str,
     dataset_version: str,
+    variables: list[str] | None = None,
+    depth_range: tuple[float, float] | None = None,
 ) -> int:
     """
-    Download every field of the dataset over the region and dates, one zlib-compressed NetCDF per calendar month named <out_dir name>_<first day>_<last day>.nc, where the first and last month are clipped to date_range. Creates out_dir and skips a month whose file exists, so a changed range start leaves an earlier partial month in place. The toolbox writes through a temporary path, so an interrupted transfer leaves no partial file. lon_range and lat_range are (low, high) in degrees east and degrees north. Returns the number of files written.
+    Download every field of the dataset (or only `variables`, over `depth_range` in metres when given) over the region and dates, one zlib-compressed NetCDF per calendar month named <out_dir name>_<first day>_<last day>.nc, where the first and last month are clipped to date_range. Creates out_dir and skips a month whose file exists, so a changed range start leaves an earlier partial month in place. The toolbox writes through a temporary path, so an interrupted transfer leaves no partial file. lon_range and lat_range are (low, high) in degrees east and degrees north. Returns the number of files written.
     """
     print(
         "status: downloading_cmems\n"
@@ -51,6 +53,9 @@ def download_cmems_dataset(
                 maximum_latitude=lat_range[1],
                 start_datetime=f"{start}T00:00:00",
                 end_datetime=f"{end}T23:59:59",
+                variables=variables,
+                minimum_depth=None if depth_range is None else depth_range[0],
+                maximum_depth=None if depth_range is None else depth_range[1],
                 output_directory=out_dir,
                 output_filename=filename,
                 netcdf_compression_level=4,

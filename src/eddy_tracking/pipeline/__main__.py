@@ -26,6 +26,9 @@ VALID_STAGES = [
     "download_pace",
     "download_sst_sss",
     "download_cmems",
+    "download_glorys",
+    "download_argo",
+    "download_insitu",
     # Not a parallel download: it reads the grid and the open_ocean label from the AVISO files that download_swot writes.
     "download_cmems_ssh",
     "eddy_id",
@@ -46,7 +49,10 @@ DEFAULT_STAGES = [
     if stage not in {"collocate_chlorophyll"}
 ]
 
-PARALLEL_STAGES = {"download_swot", "download_pace", "download_sst_sss", "download_cmems"}
+PARALLEL_STAGES = {
+    "download_swot", "download_pace", "download_sst_sss", "download_cmems", "download_glorys", "download_argo",
+    "download_insitu",
+}
 
 
 def _log_stage(action: str, stage: str) -> None:
@@ -70,6 +76,9 @@ def _run_stage(experiment: str, stage: str) -> None:
             "eddy_tracking.downloads.sss",
         ),
         "download_cmems": ("eddy_tracking.downloads.cmems",),
+        "download_glorys": ("eddy_tracking.downloads.glorys",),
+        "download_insitu": ("eddy_tracking.downloads.insitu",),
+        "download_argo": ("eddy_tracking.downloads.argo",),
         "download_cmems_ssh": ("eddy_tracking.downloads.cmems_ssh",),
     }
     modules = stage_modules.get(stage, (f"eddy_tracking.pipeline.{stage}",))

@@ -32,6 +32,9 @@ base:
     sst_dir: "sst"
     sss_raw_tmp: "sss_raw_tmp"
     plankton_dir: "plankton"
+    glorys_dir: "glorys"
+    argo_dir: "argo"
+    insitu_dir: "insitu"
 
   download:
     swot:
@@ -70,6 +73,27 @@ base:
     cmems:
       dataset_id: "cmems_obs-oc_glo_bgc-plankton_my_l3-multi-4km_P1D"
       dataset_version: "202603"
+
+    glorys:
+      # GLORYS12V1 reanalysis (GLOBAL_MULTIYEAR_PHY_001_030), daily means at 1/12 degree, over analysis_date_range. Used for mixed layer depth (mlotst, as in Ning, Chen & Gaube 2021) and the upper-ocean density structure. Over the region and period the 2D fields are ~0.3 GB and T/S to 1000 m ~6.5 GB before compression.
+      dataset_id: "cmems_mod_glo_phy_my_0.083deg_P1D-m"
+      dataset_version: "202311"
+      surface_variables: ["mlotst", "zos", "bottomT"]
+      current_variables: ["uo", "vo"]
+      profile_variables: ["thetao", "so"]
+      max_depth: 1000
+
+    argo:
+      # Argo profiles inside the region over analysis_date_range, from the Ifremer ERDDAP through argopy; no login. Core T/S profiles plus the synthetic BGC profiles (oxygen, chlorophyll, backscatter, nitrate, pH). ERDDAP requests are split into chunks of this many days.
+      chunk_days: 30
+
+    insitu:
+      # Copernicus Marine in situ profiles (INSITU_GLO_PHYBGCWAV_DISCRETE_MYNRT_013_030) other than Argo: gliders (GL), ship CTD (CT) and XBT (XB), inside the region over analysis_date_range, fetched straight from the public native bucket. profiles.nc keeps good-QC levels, profiles reaching min_depth_m, and one profile per platform per thin_hours (gliders profile every few minutes).
+      platform_types: ["GL", "CT", "XB"]
+      min_depth_m: 200
+      thin_hours: 3
+      # Profiles with more levels than this (gliders reporting every 0.3 m) are averaged into 2 dbar bins.
+      max_levels: 600
 
 eddy_id:
   max_workers: 6

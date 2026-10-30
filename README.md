@@ -108,6 +108,22 @@ python -m eddy_tracking.downloads.sss <experiment>
 python -m eddy_tracking.downloads.cmems <experiment>
   -> data/{dataset}/bronze/plankton/plankton_<first day>_<last day>.nc, one per calendar month of eddy_date_range
 
+python -m eddy_tracking.downloads.glorys <experiment>   (an experiment with base.download.glorys)
+  -> data/{dataset}/bronze/glorys/surface/surface_<first day>_<last day>.nc    mlotst, zos, bottomT (2D), one per calendar month of analysis_date_range
+  -> data/{dataset}/bronze/glorys/currents/currents_<first day>_<last day>.nc  uo, vo at the top model level
+  -> data/{dataset}/bronze/glorys/profiles/profiles_<first day>_<last day>.nc  thetao, so from the surface to max_depth
+
+python -m eddy_tracking.downloads.argo <experiment>   (an experiment with base.download.argo)
+  -> data/{dataset}/bronze/argo/core_index.parquet, bgc_index.parquet   GDAC index rows for the profiles inside the region and analysis_date_range
+  -> data/{dataset}/bronze/argo/core_profiles.nc                        PRES/TEMP/PSAL, argopy standard mode (good QC only, adjusted values preferred)
+  -> data/{dataset}/bronze/argo/bgc_profiles.nc                         all BGC parameters, argopy expert mode (real-time kept; filter on *_QC)
+
+python -m eddy_tracking.downloads.insitu <experiment>   (an experiment with base.download.insitu)
+  -> data/{dataset}/bronze/insitu/index/*.txt                 Copernicus in situ TAC index files (bounding box and time span per platform file)
+  -> data/{dataset}/bronze/insitu/GL_PR_{GL,CT,XB}_*.nc       the glider, ship CTD and XBT files overlapping the region and analysis_date_range, fetched from the public native bucket
+  -> data/{dataset}/bronze/insitu/profiles.nc                 those profiles in the Argo layout (N_PROF x N_LEVELS; PLATFORM_NUMBER, PLATFORM_TYPE, DATA_MODE, TIME, LONGITUDE, LATITUDE, PRES, TEMP, PSAL),
+                                                              good-QC levels only, profiles reaching min_depth_m, one per platform per thin_hours
+
 
 Core eddy + pigment branch
 --------------------------
@@ -176,7 +192,7 @@ PhytoClass is inactive for now. Its code remains in `src/eddy_tracking/packages/
 ### Orchestration
 
 `python -m eddy_tracking.pipeline` is a lightweight local subprocess runner for producing the
-gold table. It runs the four download stages in parallel and then runs these
+gold table. It runs the seven download stages in parallel and then runs these
 stages sequentially:
 
 ```text
