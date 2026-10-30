@@ -133,8 +133,8 @@ def collocate_chlor_a(
                     continue
                 eddy_rows.append(
                     {
-                        "track_id": int(track_id),
-                        "polarity": int(polarity),
+                        "track_id": int(track_id),  # pyright: ignore[reportArgumentType]
+                        "polarity": int(polarity),  # pyright: ignore[reportArgumentType]
                         "date": pd.Timestamp(repr_date),
                         "n_eddy_chl_pixels": int(good.size),
                         "n_eddy_sdp_pixels": int(len(group)),

@@ -1,3 +1,5 @@
+from typing import cast
+
 import numpy as np
 import pandas as pd
 
@@ -54,12 +56,12 @@ def get_5x5_pace_l2_matchups(
 
     Returns an empty frame carrying df.attrs when no row has a distance, a scan_line, and a pixel.
     """
-    distances = calculate_dist_to_point(
+    distances = cast(pd.Series, calculate_dist_to_point(
         df["longitude"],
         df["latitude"],
         target_lon,
         target_lat,
-    )
+    ))
     valid_centers = (
         distances.notna()
         & df["scan_line"].notna()
@@ -70,13 +72,13 @@ def get_5x5_pace_l2_matchups(
         matchups.attrs = df.attrs.copy()
         return matchups
 
-    closest_index = distances.loc[valid_centers].idxmin()
-    center_scan_line = int(df.loc[closest_index, "scan_line"])
-    center_pixel = int(df.loc[closest_index, "pixel"])
+    closest = df.iloc[int(np.nanargmin(distances.where(valid_centers).to_numpy()))]
+    center_scan_line = int(closest["scan_line"])
+    center_pixel = int(closest["pixel"])
 
     same_source = pd.Series(True, index=df.index)
     if "source_file" in df:
-        source_file = df.loc[closest_index, "source_file"]
+        source_file = closest["source_file"]
         same_source = df["source_file"].eq(source_file)
 
     native_box = (

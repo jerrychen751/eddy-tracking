@@ -75,22 +75,16 @@ def build_dynamics(obs: pd.DataFrame, swot_files: dict[dt.date, Path]) -> pd.Dat
         if swot_fp is None:
             continue
         lon, lat, rossby_number = load_rossby_field(swot_fp)
-        for row in grp.itertuples(index=False):
-            stats = compute_rossby_stats(
-                rossby_number,
-                lon,
-                lat,
-                row.contour_lon,  # pyright: ignore[reportAttributeAccessIssue]
-                row.contour_lat,  # pyright: ignore[reportAttributeAccessIssue]
-                row.center_lon,  # pyright: ignore[reportAttributeAccessIssue]
-                row.center_lat,  # pyright: ignore[reportAttributeAccessIssue]
-            )
+        for polarity, track_id, contour_lon, contour_lat, center_lon, center_lat in zip(
+            grp["polarity"], grp["track_id"], grp["contour_lon"], grp["contour_lat"], grp["center_lon"], grp["center_lat"],
+        ):
+            stats = compute_rossby_stats(rossby_number, lon, lat, contour_lon, contour_lat, center_lon, center_lat)
             rows.append({
-                "polarity": row.polarity,  # pyright: ignore[reportAttributeAccessIssue]
-                "track_id": int(row.track_id),  # pyright: ignore[reportAttributeAccessIssue]
-                "date": row.date,  # pyright: ignore[reportAttributeAccessIssue]
-                "center_lon": float(row.center_lon),  # pyright: ignore[reportAttributeAccessIssue]
-                "center_lat": float(row.center_lat),  # pyright: ignore[reportAttributeAccessIssue]
+                "polarity": polarity,
+                "track_id": int(track_id),
+                "date": date,
+                "center_lon": float(center_lon),
+                "center_lat": float(center_lat),
                 **stats,
             })
     return pd.DataFrame(rows, columns=dynamics_columns)  # pyright: ignore[reportArgumentType]
