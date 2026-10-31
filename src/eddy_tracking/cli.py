@@ -13,6 +13,7 @@ TOOLS = {
     "download-glorys": "eddy_tracking.downloads.glorys",
     "download-argo": "eddy_tracking.downloads.argo",
     "download-insitu": "eddy_tracking.downloads.insitu",
+    "download-woa": "eddy_tracking.downloads.woa",
     "identify-eddies": "eddy_tracking.tools.eddy_id",
     "track-eddies": "eddy_tracking.tools.eddy_track",
     "trace-axis": "eddy_tracking.tools.gulf_stream",

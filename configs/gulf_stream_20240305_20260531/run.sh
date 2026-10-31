@@ -39,6 +39,8 @@ eddy-tracking download-argo $LONLAT $ANALYSIS_DATES --profiles core bgc --chunk-
   --out $D/bronze/argo
 eddy-tracking download-insitu $LONLAT $ANALYSIS_DATES --platform-types GL CT XB --min-depth-m 200 --thin-hours 3 --max-levels 600 \
   --out $D/bronze/insitu
+eddy-tracking download-woa $LONLAT --opendap-root https://www.ncei.noaa.gov/thredds-ocean/dodsC/woa23/DATA --period decav91C0 \
+  --out $D/bronze/woa23
 
 eddy-tracking identify-eddies $LONLAT $EDDY_DATES --ssh $D/bronze/swot_l4_open_ocean \
   --bessel-km 500 --step-m 0.004 --shape-error 55 --min-amplitude-m 0.008 --workers 6 \
