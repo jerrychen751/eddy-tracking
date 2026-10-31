@@ -8,6 +8,7 @@ from typing import Any
 
 import argopy
 from argopy import ArgoIndex, DataFetcher
+from argopy.utils import list_standard_variables
 
 from eddy_tracking.config import load_config, resolve_data_dir
 
@@ -37,7 +38,7 @@ def download_argo_index(cfg: dict, out_dir: Path) -> int:
     return n_total
 
 
-# core_profiles.nc uses argopy "standard" mode, which keeps only good or probably good QC and prefers adjusted values. bgc_profiles.nc uses "expert" mode, which keeps real-time data and every QC flag, because most BGC profiles in the region are still real-time; filter on the *_QC variables when using them
+# core_profiles.nc keeps only good or probably good position, time, pressure and temperature and prefers adjusted values, like argopy "standard" mode, but blanks salinity that failed QC instead of dropping the level, so floats with a failed conductivity sensor still give temperature profiles. bgc_profiles.nc uses "expert" mode, which keeps real-time data and every QC flag, because most BGC profiles in the region are still real-time; filter on the *_QC variables when using them
 def download_argo_profiles(cfg: dict, out_dir: Path) -> int:
     lon0, lon1, lat0, lat1, start, end = _build_box(cfg)
     # The data fetcher's box also takes a pressure range (dbar); 0 to 6000 keeps every level, deep floats included.
@@ -45,7 +46,7 @@ def download_argo_profiles(cfg: dict, out_dir: Path) -> int:
     argo_cfg = cfg["base"]["download"]["argo"]
     saved = 0
     jobs: tuple[tuple[str, dict[str, Any]], ...] = (
-        ("core_profiles.nc", dict(ds="phy", mode="standard")),
+        ("core_profiles.nc", dict(ds="phy", mode="expert")),
         ("bgc_profiles.nc", dict(ds="bgc", mode="expert", params="all", measured=None)),
     )
     for filename, options in jobs:
@@ -60,6 +61,12 @@ def download_argo_profiles(cfg: dict, out_dir: Path) -> int:
             **options,
         )
         points = fetcher.region(box).to_xarray()
+        # Standard mode filters every QC field at once, so a level whose salinity failed QC lost its good temperature too (about 1,100 profiles in the Gulf Stream box)
+        if filename == "core_profiles.nc":
+            points = points.argo.datamode.merge()
+            points = points.argo.filter_qc(QC_list=[1, 2], QC_fields=["POSITION_QC", "TIME_QC", "PRES_QC", "TEMP_QC"])
+            points["PSAL"] = points["PSAL"].where(points["PSAL_QC"].isin([1, 2]))
+            points = points.drop_vars(sorted(set(points.data_vars) - set(list_standard_variables())))
         profiles = points.argo.point2profile()
         tmp = path.with_suffix(".nc.part")
         profiles.to_netcdf(tmp)
