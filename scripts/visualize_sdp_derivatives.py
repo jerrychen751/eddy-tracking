@@ -49,8 +49,8 @@ def main() -> None:
     sst_df, sss_df = read_ancillary_grids(sst_dir, sss_dir)
 
     # Sample SST/SSS at the eddy-mean location and the median date, since we've averaged across the whole eddy's coverage period.
-    center_lon = float(df["pixel_lon"].mean())
-    center_lat = float(df["pixel_lat"].mean())
+    center_lon = float(cast(pd.Series, df["pixel_lon"]).mean())
+    center_lat = float(cast(pd.Series, df["pixel_lat"]).mean())
     median_date = df["date"].sort_values().iloc[len(df) // 2]  # pyright: ignore[reportCallIssue]
     sst, sss = sample_ancillary(
         sst_df, sss_df,
