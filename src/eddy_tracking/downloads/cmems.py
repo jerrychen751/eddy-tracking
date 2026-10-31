@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
 import calendar
 import datetime as dt
-import sys
 from pathlib import Path
 
 import copernicusmarine
 
-from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import load_cmems_credentials
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 
 
 def download_cmems_dataset(
@@ -67,22 +67,26 @@ def download_cmems_dataset(
     return saved
 
 
-def main(experiment: str) -> None:
-    """Download the months of the plankton dataset that cover the eddy tracking date range of the experiment."""
-    cfg = load_config(experiment)
+def main(argv: list[str]) -> None:
+    """Download the months of the plankton dataset that cover --dates."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-plankton")
+    add_region_arguments(parser)
+    parser.add_argument("--dataset-id", required=True, help="Copernicus Marine dataset id, such as cmems_obs-oc_glo_bgc-plankton_my_l3-multi-4km_P1D")
+    parser.add_argument("--dataset-version", required=True, help="such as 202603")
+    parser.add_argument("--out", type=Path, required=True, help="the folder name prefixes every monthly file name")
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-plankton", args, operational=set())
+    args.out.mkdir(parents=True, exist_ok=True)
+
     n_saved = download_cmems_dataset(
-        date_range=tuple(cfg["base"]["time"]["eddy_date_range"]),
-        lon_range=tuple(cfg["base"]["region"]["lon_range"]),
-        lat_range=tuple(cfg["base"]["region"]["lat_range"]),
-        out_dir=resolve_data_dir(cfg, "plankton_dir"),
-        dataset_id=cfg["base"]["download"]["cmems"]["dataset_id"],
-        dataset_version=cfg["base"]["download"]["cmems"]["dataset_version"],
+        date_range=tuple(args.dates),
+        lon_range=tuple(args.lon),
+        lat_range=tuple(args.lat),
+        out_dir=args.out,
+        dataset_id=args.dataset_id,
+        dataset_version=args.dataset_version,
     )
     print(
         "status: complete\n"
         f"cmems_files_saved: {n_saved}"
     )
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

@@ -3,18 +3,18 @@ Find the Gulf Stream jet-core axis per date from SWOT SSH, and classify each edd
 
 The axis is the longest absolute dynamic topography contour at the level with the fastest mean flow along it, with that level smoothed over 15 days. Movement (NN/NS/SN/SS) compares an eddy's side of the axis at birth vs death: left of the flow is N, right is S.
 
-Outputs to silver/gulf_stream/:
+Outputs to the --out folder:
   - streamline.parquet holds one row per ordered centerline point: date, point_idx, lon, lat, adt_level
   - eddy_movement.parquet holds one row per (polarity, track_id): movement class, sides, and signed axis distances in km
 """
 
+import argparse
 import datetime as dt
-import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.preprocess.streamline import (
     GulfStreamCenterline,
     compute_signed_distance_km,
@@ -24,16 +24,23 @@ from eddy_tracking.preprocess.streamline import (
 )
 from eddy_tracking.preprocess.swot import index_swot_files_by_date
 from eddy_tracking.preprocess.tracks import load_track_observations
+from eddy_tracking.utils.cli import write_settings
 
 
-def main(experiment: str) -> None:
+def main(argv: list[str]) -> None:
     """Trace daily streamlines and write streamline and movement Parquet files."""
-    cfg = load_config(experiment)
-    swot_dir = resolve_data_dir(cfg, "swot_dir")
-    adt_level_range = tuple(cfg["gulf_stream"]["adt_level_range"])
-    out_dir = resolve_output_dir(experiment, "gulf_stream")
+    parser = argparse.ArgumentParser(prog="eddy-tracking trace-axis")
+    parser.add_argument("--ssh", type=Path, required=True, help="folder of daily SSH maps; the axis reads the unmasked adt_full, ugos_full and vgos_full")
+    parser.add_argument("--tracks", type=Path, required=True, help="folder track-eddies wrote")
+    parser.add_argument("--adt-levels", nargs=2, type=float, required=True, metavar=("LOW", "HIGH"), help="ADT range (m) searched for the fastest contour")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "trace-axis", args, operational=set())
+    adt_level_range = tuple(args.adt_levels)
+    out_dir = args.out
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    swot_files = index_swot_files_by_date(swot_dir)
+    swot_files = index_swot_files_by_date(args.ssh)
     print(
         "status: computing_gulf_stream_streamline\n"
         f"swot_days: {len(swot_files)}"
@@ -65,7 +72,7 @@ def main(experiment: str) -> None:
         f"{streamline_df['lat'].median():.2f}"
     )
 
-    obs = load_track_observations(experiment)
+    obs = load_track_observations(args.tracks)
     movement_rows = []
     for (polarity, track_id), grp in obs.groupby(["polarity", "track_id"]):  # pyright: ignore[reportGeneralTypeIssues]
         grp = grp.sort_values("date")
@@ -99,7 +106,3 @@ def _classify_streamline_side(centerline_by_date, row) -> tuple[float, str]:
     if centerline is None:
         return np.nan, ""
     return compute_signed_distance_km(centerline.lon, centerline.lat, row["center_lon"], row["center_lat"])
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

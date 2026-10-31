@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import argparse
 import concurrent.futures as cf
 import datetime as dt
-import sys
 import warnings
 from pathlib import Path
 from typing import cast
@@ -17,8 +17,8 @@ import pandas as pd
 import requests
 import xarray as xr
 
-from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import load_cmems_credentials
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 
 PLATFORM_NAMES = {"GL": "glider", "CT": "ctd", "XB": "xbt"}
 
@@ -47,9 +47,7 @@ def select_index_files(index_dir: Path, lon_range, lat_range, date_range, platfo
     return pd.concat([monthly, history], ignore_index=True)
 
 
-def download_insitu_files(cfg: dict, out_dir: Path) -> pd.DataFrame:
-    base = cfg["base"]
-    insitu = base["download"]["insitu"]
+def download_insitu_files(out_dir: Path, lon_range, lat_range, date_range, platform_types: list[str]) -> pd.DataFrame:
     index_dir = out_dir / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
     username, password = load_cmems_credentials()
@@ -57,10 +55,7 @@ def download_insitu_files(cfg: dict, out_dir: Path) -> pd.DataFrame:
         dataset_id="cmems_obs-ins_glo_phybgcwav_mynrt_na_irr", index_parts=True, output_directory=index_dir, no_directories=True,
         username=username, password=password, disable_progress_bar=True, overwrite=True,
     )
-    selection = select_index_files(
-        index_dir, tuple(base["region"]["lon_range"]), tuple(base["region"]["lat_range"]),
-        tuple(base["time"]["analysis_date_range"]), list(insitu["platform_types"]),
-    )
+    selection = select_index_files(index_dir, lon_range, lat_range, date_range, platform_types)
     selection["local_name"] = selection["file_name"].str.rsplit("/", n=1).str[1]
     selection.to_parquet(out_dir / "index_selection.parquet", index=False)
     print(
@@ -153,10 +148,8 @@ def _read_platform_file(path: Path, lon_range, lat_range, date_range, min_depth_
 
 
 # profiles.nc is laid out like the Argo download (N_PROF x N_LEVELS), with the levels of each profile left-packed and padded with NaN. Only good or probably good levels are kept, so no QC variables are written.
-def build_profile_file(cfg: dict, out_dir: Path, files: list[Path]) -> xr.Dataset:
-    base = cfg["base"]
-    insitu = base["download"]["insitu"]
-    args = (tuple(base["region"]["lon_range"]), tuple(base["region"]["lat_range"]), tuple(base["time"]["analysis_date_range"]), float(insitu["min_depth_m"]), float(insitu["thin_hours"]), int(insitu["max_levels"]))
+def build_profile_file(out_dir: Path, files: list[Path], lon_range, lat_range, date_range, min_depth_m: float, thin_hours: float, max_levels: int) -> xr.Dataset:
+    args = (lon_range, lat_range, date_range, min_depth_m, thin_hours, max_levels)
     frames = [frame for frame in (_read_platform_file(path, *args) for path in files) if frame is not None]
     table = pd.concat(frames, ignore_index=True).sort_values("time").reset_index(drop=True)
     n_levels = max(int(np.isfinite(row).sum()) for row in table["pressure"])
@@ -182,7 +175,7 @@ def build_profile_file(cfg: dict, out_dir: Path, files: list[Path]) -> xr.Datase
         attrs={
             "source": "Copernicus Marine INSITU_GLO_PHYBGCWAV_DISCRETE_MYNRT_013_030, gliders, ship CTD and XBT",
             "quality_control": "levels with TEMP_QC and PSAL_QC in (1, 2) only",
-            "thinning": f"at most one profile per platform per {insitu['thin_hours']} hours, profiles reaching {insitu['min_depth_m']} m",
+            "thinning": f"at most one profile per platform per {thin_hours:g} hours, profiles reaching {min_depth_m:g} m",
             "pressure": "PRES where the file has it, else gsw.p_from_z of DEPH at the profile latitude",
         },
     )
@@ -200,13 +193,22 @@ def build_profile_file(cfg: dict, out_dir: Path, files: list[Path]) -> xr.Datase
     return profiles
 
 
-def main(experiment: str) -> None:
-    cfg = load_config(experiment)
-    out_dir = resolve_data_dir(cfg, "insitu_dir")
-    selection = download_insitu_files(cfg, out_dir)
-    build_profile_file(cfg, out_dir, [out_dir / name for name in selection["local_name"]])
+def main(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-insitu")
+    add_region_arguments(parser)
+    parser.add_argument("--platform-types", nargs="+", required=True, help="two-letter Copernicus platform codes, such as GL (glider), CT (ship CTD) and XB (XBT)")
+    parser.add_argument("--min-depth-m", type=float, required=True, help="profiles must reach this depth")
+    parser.add_argument("--thin-hours", type=float, required=True, help="keep at most one profile per platform per this many hours")
+    parser.add_argument("--max-levels", type=int, required=True, help="profiles with more valid levels are averaged into 2 dbar bins")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-insitu", args, operational=set())
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    lon_range, lat_range, date_range = tuple(args.lon), tuple(args.lat), tuple(args.dates)
+    selection = download_insitu_files(args.out, lon_range, lat_range, date_range, args.platform_types)
+    build_profile_file(
+        args.out, [args.out / name for name in selection["local_name"]],
+        lon_range, lat_range, date_range, args.min_depth_m, args.thin_hours, args.max_levels,
+    )
     print("status: complete")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

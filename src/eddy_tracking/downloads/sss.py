@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import re
 import shutil
-import sys
 from pathlib import Path
 
-from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import login_harmony
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 
 
 def download_smap_sss_8d(
@@ -112,23 +112,29 @@ def download_smap_sss_8d(
     return saved, failed
 
 
-def main(experiment: str) -> None:
-    """Download configured SSS files and exit if a date range fails."""
-    cfg = load_config(experiment)
+def main(argv: list[str]) -> None:
+    """Download the --dates SSS files and exit if a date range fails."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-sss")
+    add_region_arguments(parser)
+    parser.add_argument("--collection-id", required=True, help="CMR collection id of SMAP L3 8-day SSS, such as C2208422957-POCLOUD")
+    parser.add_argument("--requests-workers", type=int, default=4, help="parallel Harmony download connections")
+    parser.add_argument("--download-chunk-size-mb", type=int, default=16)
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-sss", args, operational={"requests_workers", "download_chunk_size_mb"})
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    # Harmony stages each batch in raw_tmp/ under --out, which download_smap_sss_8d deletes on exit; readers glob only the top level of --out
     n_saved, n_failed = download_smap_sss_8d(
-        date_range=tuple(cfg["base"]["time"]["rrs_date_range"]),
-        lon_range=tuple(cfg["base"]["region"]["lon_range"]),
-        lat_range=tuple(cfg["base"]["region"]["lat_range"]),
-        out_dir=resolve_data_dir(cfg, "sss_dir"),
-        raw_tmp=resolve_data_dir(cfg, "sss_raw_tmp"),
-        collection_id=cfg["base"]["download"]["sss"]["collection_id"],
+        date_range=tuple(args.dates),
+        lon_range=tuple(args.lon),
+        lat_range=tuple(args.lat),
+        out_dir=args.out,
+        raw_tmp=args.out / "raw_tmp",
+        collection_id=args.collection_id,
         batch_days=10,
-        num_requests_workers=cfg["base"]["download"]["sss"][
-            "num_requests_workers"
-        ],
-        download_chunk_size_mb=cfg["base"]["download"]["sss"][
-            "download_chunk_size_mb"
-        ],
+        num_requests_workers=args.requests_workers,
+        download_chunk_size_mb=args.download_chunk_size_mb,
     )
 
     print(
@@ -138,7 +144,3 @@ def main(experiment: str) -> None:
     )
     if n_failed:
         raise SystemExit(f"{n_failed} SSS date range(s) failed to download")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

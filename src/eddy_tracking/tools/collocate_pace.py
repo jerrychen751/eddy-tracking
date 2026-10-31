@@ -3,25 +3,21 @@ Collocate PACE L3 Rrs observations with tracked eddy contours.
 
 For each PACE file (daily or 8-day composite), finds all eddies that were detected during the observation period, extracts valid Rrs pixels within max_radius speed radii of each eddy's center or inside its contour, and writes per-eddy Parquet files.
 
-Temporal resolution is set via the collocate_pace config section:
-  - "DAY" (default): exact date match between PACE file and eddy detection
+Temporal resolution is set by --temporal-resolution:
+  - "DAY": exact date match between PACE file and eddy detection
   - "8D": for each 8-day composite, picks the eddy contour from the day closest to the date range midpoint (since the Rrs is a temporal average)
 """
 
+import argparse
 import datetime as dt
-import sys
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from eddy_tracking.config import (
-    METADATA_COLS,
-    load_config,
-    resolve_data_dir,
-    resolve_output_dir,
-)
+from eddy_tracking.config import METADATA_COLS
 from eddy_tracking.preprocess.pace import parse_fn_for_date_range
 from eddy_tracking.preprocess.tracks import (
     PET_EPOCH,
@@ -31,6 +27,7 @@ from eddy_tracking.preprocess.tracks import (
     load_tracks,
     mask_pixels_inside_contour,
 )
+from eddy_tracking.utils.cli import write_settings
 from eddy_tracking.utils.geography import calculate_dist_to_point
 from eddy_tracking.utils.subset import parse_date_range
 
@@ -80,31 +77,38 @@ def collocate_one_observation(
     )
 
 
-def main(experiment: str) -> None:
+def main(argv: list[str]) -> None:
     """Collocate PACE observations and write one Parquet file per tracked eddy."""
-    cfg = load_config(experiment)
-    collocation_cfg = cfg["collocate_pace"]
-    pace_dir = resolve_data_dir(cfg, "pace_dir")
-    min_coverage = collocation_cfg["min_coverage"]
-    max_radius = collocation_cfg["max_radius"]
-    configured_track_ids = collocation_cfg.get("track_ids")
-    track_ids = set(configured_track_ids) if configured_track_ids else None
-    temporal_resolution = collocation_cfg.get("temporal_resolution", "DAY")
-    region = collocation_cfg.get("region")
-    date_range = parse_date_range(collocation_cfg.get("date_range"))
+    parser = argparse.ArgumentParser(prog="eddy-tracking collocate-pace")
+    parser.add_argument("--tracks", type=Path, required=True, help="folder track-eddies wrote")
+    parser.add_argument("--pace", type=Path, required=True, help="folder of PACE L3 Rrs files")
+    parser.add_argument("--dates", nargs=2, required=True, metavar=("START", "END"), help="ISO dates, both inclusive; eddy-days outside them are left out")
+    parser.add_argument("--temporal-resolution", choices=["DAY", "8D"], required=True, help="whether the PACE files are daily maps or 8-day composites")
+    parser.add_argument("--min-coverage", type=float, required=True, help="fraction of interior pixels that must hold a finite spectrum")
+    parser.add_argument("--max-radius", type=float, required=True, metavar="SPEED_RADII", help="pixels within this many speed radii of the center are kept, besides the interior")
+    parser.add_argument("--track-ids", nargs="+", required=True, help="track ids to collocate in both polarities, or all")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "collocate-pace", args, operational=set())
+
+    pace_dir = args.pace
+    track_ids = None if args.track_ids == ["all"] else {int(track_id) for track_id in args.track_ids}
+    date_range = parse_date_range(args.dates)
     output_dirs = {
-        polarity: resolve_output_dir(experiment, "collocate_pace", polarity)
+        polarity: args.out / polarity
         for polarity in ("cyclone", "anticyclone")
     }
+    for out_dir in output_dirs.values():
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
 
     for polarity in ("cyclone", "anticyclone"):
-        tracked = load_tracks(experiment, polarity)
+        tracked = load_tracks(args.tracks, polarity)
         n_tracks = len(np.unique(tracked.track))
 
         polarity_date_index = build_date_eddy_index(
-            tracked, polarity, track_ids, region, date_range
+            tracked, polarity, track_ids, date_range=date_range
         )
         for day, observations in polarity_date_index.items():
             date_index[day].extend(observations)
@@ -156,7 +160,7 @@ def main(experiment: str) -> None:
     n_matched_files = 0
 
     for pace_path in pace_files:
-        composite_date_range = parse_fn_for_date_range(pace_path.name, temporal_resolution)
+        composite_date_range = parse_fn_for_date_range(pace_path.name, args.temporal_resolution)
         if composite_date_range is None:
             continue
         representative_date, date_range_start, date_range_end = composite_date_range
@@ -187,8 +191,8 @@ def main(experiment: str) -> None:
                 latitudes,
                 rrs,
                 eddy,
-                min_coverage=min_coverage,
-                max_radius=max_radius,
+                min_coverage=args.min_coverage,
+                max_radius=args.max_radius,
             )
             if result is None:
                 continue
@@ -256,7 +260,3 @@ def main(experiment: str) -> None:
         "status: complete\n"
         f"eddy_files_written: {n_written}"
     )
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

@@ -3,9 +3,9 @@ from typing import Any, cast
 import pandas as pd
 
 
-# First and last day of base.time.analysis_date_range, both inclusive
+# First and last day of analysis_date_range in configs/<experiment>/analysis.yaml, both inclusive
 def read_analysis_period(cfg: dict[str, Any]) -> tuple[pd.Timestamp, pd.Timestamp]:
-    start, end = cfg["base"]["time"]["analysis_date_range"]
+    start, end = cfg["analysis_date_range"]
     return cast(pd.Timestamp, pd.Timestamp(start)), cast(pd.Timestamp, pd.Timestamp(end))
 
 

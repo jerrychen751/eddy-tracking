@@ -73,7 +73,7 @@ def collocate_chlor_a(
     bgc_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.BGC\.")
     rrs_re = re.compile(r"PACE_OCI\.(\d{8})_(\d{8})\.L3m\.8D\.AOP\.")
     swot_files = index_swot_files_by_date(data_dir / "bronze" / "swot_l4_open_ocean")
-    date_index = load_date_eddy_index(experiment)
+    date_index = load_date_eddy_index(resolve_output_dir(experiment, "eddy_track"))
     pixels = read_eddy_pixels(experiment)
     print(
         f"eddy_pixels: {len(pixels):,}\n"

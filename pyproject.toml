@@ -45,6 +45,9 @@ dependencies = [
     "pip==26.2.2", # argopy runs 'python -m pip list' when imported and prints an error to stderr if pip is missing
 ]
 
+[project.scripts]
+eddy-tracking = "eddy_tracking.cli:main"
+
 [dependency-groups]
 dev = [
     "ipykernel>=6.29",

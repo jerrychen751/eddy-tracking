@@ -1,19 +1,19 @@
 # Position of an eddy-composite on the two-part time axis of an eddy that crosses the Gulf Stream: 0 to 1 is the time on the side it started on, 1 to 2 the time on the side it ends on
+from pathlib import Path
 from typing import cast
 
 import pandas as pd
 
-from eddy_tracking.config import resolve_output_dir
 from eddy_tracking.preprocess.streamline import compute_signed_distance_km, index_centerlines_by_date
 from eddy_tracking.preprocess.tracks import load_track_observations
 
 IDENTITY_COLUMNS = ['polarity', 'track_id']
 
 
-def measure_distance_past_axis(experiment: str, tracks: pd.DataFrame) -> pd.DataFrame:
+def measure_distance_past_axis(track_dir: Path, axis_dir: Path, tracks: pd.DataFrame) -> pd.DataFrame:
     # Daily observations of the given crossing tracks, with across_km the distance from the daily axis toward the side the eddy ends on: positive south of the axis for a cyclone, north of it for an anticyclone
-    observations = load_track_observations(experiment).drop(columns=['contour_lon', 'contour_lat']).merge(tracks[IDENTITY_COLUMNS], on=IDENTITY_COLUMNS).sort_values(IDENTITY_COLUMNS + ['date'], ignore_index=True)
-    centerlines = index_centerlines_by_date(pd.read_parquet(resolve_output_dir(experiment, 'gulf_stream') / 'streamline.parquet'))
+    observations = load_track_observations(track_dir).drop(columns=['contour_lon', 'contour_lat']).merge(tracks[IDENTITY_COLUMNS], on=IDENTITY_COLUMNS).sort_values(IDENTITY_COLUMNS + ['date'], ignore_index=True)
+    centerlines = index_centerlines_by_date(pd.read_parquet(axis_dir / 'streamline.parquet'))
     observations['across_km'] = cast(pd.Series, observations['polarity']).map({'cyclone': -1, 'anticyclone': 1}) * [
         compute_signed_distance_km(centerlines[day.date()].lon, centerlines[day.date()].lat, lon, lat)[0]
         for day, lon, lat in zip(observations['date'], observations['center_lon'], observations['center_lat'])

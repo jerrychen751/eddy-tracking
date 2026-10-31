@@ -1,21 +1,21 @@
 """Build validated eddy means from standard PACE chlor_a without SDP inputs."""
 
+import argparse
 import datetime as dt
 import re
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.preprocess.tracks import (
     collect_eddies_for_date_range,
     load_date_eddy_index,
     load_track_observations,
     mask_pixels_inside_contour,
 )
+from eddy_tracking.utils.cli import write_settings
 from eddy_tracking.utils.files import write_parquet_atomically
 
 
@@ -100,31 +100,26 @@ def read_movement_table(path: Path, observations: pd.DataFrame) -> pd.DataFrame:
     return movement
 
 
-def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
+def build_chlorophyll_table(
+    pace_bgc_dir: Path,
+    track_dir: Path,
+    axis_dir: Path,
+    date_range: tuple[dt.date, dt.date],
+    selected_ids: set[int] | None,
+    min_coverage: float,
+    min_pixels: int,
+) -> pd.DataFrame:
     """Return eddy means, coverage, and physical ages after input checks; retain gaps as absent observations."""
-    cfg = load_config(experiment)
-    settings = cfg["collocate_chlorophyll"]
-    min_coverage = settings["min_coverage"]
-    min_pixels = settings["min_pixels"]
     if not np.isfinite(min_coverage) or not 0 < min_coverage <= 1:
-        raise ValueError("collocate_chlorophyll.min_coverage must lie in (0, 1].")
-    if isinstance(min_pixels, bool) or not isinstance(min_pixels, int) or min_pixels < 1:
-        raise ValueError("collocate_chlorophyll.min_pixels must be a positive integer.")
-    collocation_cfg = cfg["collocate_pace"]
-    if collocation_cfg["temporal_resolution"] != "8D":
-        raise ValueError("Standard chlorophyll collocation requires 8-day composites.")
-    dates = collocation_cfg["date_range"]
-    if len(dates) != 2:
-        raise ValueError("collocate_pace.date_range must contain a start and an end date.")
-    date_range = (dt.date.fromisoformat(dates[0]), dt.date.fromisoformat(dates[1]))
+        raise ValueError("--min-coverage must lie in (0, 1].")
+    if min_pixels < 1:
+        raise ValueError("--min-pixels must be a positive integer.")
     if date_range[0] > date_range[1]:
-        raise ValueError("collocate_pace.date_range must be chronological.")
-    files = collect_chlorophyll_files(resolve_data_dir(cfg, "pace_bgc_dir"), date_range)
-    observations = load_track_observations(experiment)
-    movement = read_movement_table(resolve_output_dir(experiment, "gulf_stream") / "eddy_movement.parquet", observations)
-    configured_ids = collocation_cfg.get("track_ids")
-    selected_ids = set(configured_ids) if configured_ids else None
-    date_index = load_date_eddy_index(experiment, selected_ids, collocation_cfg.get("region"), date_range)
+        raise ValueError("--dates must be chronological.")
+    files = collect_chlorophyll_files(pace_bgc_dir, date_range)
+    observations = load_track_observations(track_dir)
+    movement = read_movement_table(axis_dir / "eddy_movement.parquet", observations)
+    date_index = load_date_eddy_index(track_dir, selected_ids, date_range=date_range)
     rows = []
     for path, start, end in files:
         field = read_chlorophyll_field(path)
@@ -175,13 +170,24 @@ def build_chlorophyll_table(experiment: str) -> pd.DataFrame:
     return chl
 
 
-def main(experiment: str) -> None:
-    """Validate inputs and atomically replace silver/pace_chl/eddy_chlor_a.parquet; preserve the prior table on failure."""
-    chl = build_chlorophyll_table(experiment)
-    out_path = resolve_output_dir(experiment, "pace_chl") / "eddy_chlor_a.parquet"
+def main(argv: list[str]) -> None:
+    """Validate inputs and atomically replace eddy_chlor_a.parquet under --out; preserve the prior table on failure."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking collocate-chlorophyll")
+    parser.add_argument("--pace-bgc", type=Path, required=True, help="folder of PACE L3 8-day BGC files")
+    parser.add_argument("--tracks", type=Path, required=True, help="folder track-eddies wrote")
+    parser.add_argument("--axis", type=Path, required=True, help="folder trace-axis wrote")
+    parser.add_argument("--dates", nargs=2, required=True, metavar=("START", "END"), help="ISO dates, both inclusive; eddy-days outside them are left out")
+    parser.add_argument("--track-ids", nargs="+", required=True, help="track ids to collocate in both polarities, or all")
+    parser.add_argument("--min-coverage", type=float, required=True, help="fraction of interior pixels that must hold a positive chlor_a")
+    parser.add_argument("--min-pixels", type=int, required=True, help="interior pixels that must hold a positive chlor_a")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "collocate-chlorophyll", args, operational=set())
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    date_range = (dt.date.fromisoformat(args.dates[0]), dt.date.fromisoformat(args.dates[1]))
+    selected_ids = None if args.track_ids == ["all"] else {int(track_id) for track_id in args.track_ids}
+    chl = build_chlorophyll_table(args.pace_bgc, args.tracks, args.axis, date_range, selected_ids, args.min_coverage, args.min_pixels)
+    out_path = args.out / "eddy_chlor_a.parquet"
     write_parquet_atomically(chl, out_path)
     print(f"output_file: {out_path}\neddy_composites: {len(chl)}")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

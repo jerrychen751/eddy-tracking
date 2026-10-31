@@ -3,11 +3,12 @@ Download PACE OCI L3 mapped files.
 
 OB.DAAC OPenDAP provides server-side subsetting.
 
-The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto. Both use the same granule naming, so one download path serves them, and the experiment config names the CMR collection id of each.
+The product code selects the suite: "AOP" holds Rrs, "BGC" holds chlor_a, poc, pic, and carbon_phyto. Both use the same granule naming, so one download path serves them, and each run names the CMR collection id of its product with --collection-id.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -17,12 +18,12 @@ import earthaccess
 import xarray as xr
 from earthaccess import DataGranule
 
-from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
     login_earthdata,
     open_obdaac_dataset,
 )
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 from eddy_tracking.utils.files import write_netcdf_atomically
 
 
@@ -172,30 +173,29 @@ def download_pace_l3(
     return saved, skipped, errors
 
 
-def main(experiment: str) -> None:
-    """Download and save the AOP and BGC PACE files of an experiment, exiting if any date fails."""
-    cfg = load_config(experiment)
-    longitude_range = tuple(cfg["base"]["region"]["lon_range"])
-    latitude_range = tuple(cfg["base"]["region"]["lat_range"])
-    date_range = tuple(cfg["base"]["time"]["rrs_date_range"])
-    pace_cfg = cfg["base"]["download"]["pace"]
-    temporal_resolution = pace_cfg.get("temporal_resolution", "DAY")
+def main(argv: list[str]) -> None:
+    """Download and save the PACE files of one --product, exiting if any date fails."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-pace")
+    add_region_arguments(parser)
+    parser.add_argument("--product", choices=["AOP", "BGC"], required=True, help="AOP holds Rrs, BGC holds chlor_a, poc, pic and carbon_phyto")
+    parser.add_argument("--collection-id", required=True, help="CMR collection id of the product, such as C4184125822-OB_CLOUD")
+    parser.add_argument("--version", required=True, help="reprocessing version in the granule names, such as V3_2")
+    parser.add_argument("--temporal-resolution", choices=["DAY", "8D"], required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-pace", args, operational=set())
+    args.out.mkdir(parents=True, exist_ok=True)
 
-    n_saved = n_skipped = n_errors = 0
-    for product, data_key in (("AOP", "pace_dir"), ("BGC", "pace_bgc_dir")):
-        saved, skipped, errors = download_pace_l3(
-            date_range=date_range,
-            lon_range=longitude_range,
-            lat_range=latitude_range,
-            out_dir=resolve_data_dir(cfg, data_key),
-            collection_id=pace_cfg["collection_ids"][product],
-            version=pace_cfg["version"],
-            temporal_res=temporal_resolution,
-            product=product,
-        )
-        n_saved += saved
-        n_skipped += skipped
-        n_errors += errors
+    n_saved, n_skipped, n_errors = download_pace_l3(
+        date_range=tuple(args.dates),
+        lon_range=tuple(args.lon),
+        lat_range=tuple(args.lat),
+        out_dir=args.out,
+        collection_id=args.collection_id,
+        version=args.version,
+        temporal_res=args.temporal_resolution,
+        product=args.product,
+    )
 
     print(
         "status: download_finished\n"
@@ -205,7 +205,3 @@ def main(experiment: str) -> None:
     )
     if n_errors:
         raise SystemExit(f"{n_errors} date(s) failed to download")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

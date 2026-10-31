@@ -1,20 +1,20 @@
 """
 Track eddies across daily identification files using PET Correspondances.
 
-Builds frame-to-frame eddy correspondences from the daily .nc files produced by eddy_id.py, applies the configured minimum track duration, interpolates virtual observations, and writes merged tracks to Zarr.
+Builds frame-to-frame eddy correspondences from the daily .nc files produced by eddy_id.py, applies the --min-track-days minimum track duration, interpolates virtual observations, and writes merged tracks to Zarr.
 """
 
+import argparse
 import shutil
-import sys
 from pathlib import Path
 from typing import cast
 
 from numpy import concatenate, ones
 
-from eddy_tracking.config import load_config, resolve_output_dir
 from eddy_tracking.packages.py_eddy_tracker.generic import distance_grid
 from eddy_tracking.packages.py_eddy_tracker.observations.observation import EddiesObservations
 from eddy_tracking.packages.py_eddy_tracker.tracking import Correspondances
+from eddy_tracking.utils.cli import write_settings
 
 
 def _remove_path(path: Path) -> None:
@@ -127,23 +127,25 @@ def track(
     )
 
 
-def main(experiment: str) -> None:
-    """Track both polarities for an experiment and write their Zarr datasets."""
-    cfg = load_config(experiment)
-    tracking_cfg = cfg["eddy_track"]
+def main(argv: list[str]) -> None:
+    """Track both polarities and write their Zarr datasets."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking track-eddies")
+    parser.add_argument("--eddies", type=Path, required=True, help="folder identify-eddies wrote, holding cyclone/ and anticyclone/")
+    parser.add_argument("--virtual-days", type=int, required=True, help="consecutive missed days before a track breaks")
+    parser.add_argument("--max-speed-km-per-day", type=float, required=True, help="drift allowed per elapsed day beyond the two speed radii")
+    parser.add_argument("--min-track-days", type=int, required=True, help="tracks shorter than this are dropped")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "track-eddies", args, operational=set())
 
     for polarity in ("anticyclone", "cyclone"):
-        id_dir = resolve_output_dir(experiment, "eddy_id", polarity)
-        track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
+        track_dir = args.out / polarity
+        track_dir.mkdir(parents=True, exist_ok=True)
 
         track(
-            id_dir,
+            args.eddies / polarity,
             track_dir,
-            virtual=tracking_cfg["virtual"],
-            max_speed_km_per_day=tracking_cfg["max_speed_km_per_day"],
-            min_track_days=tracking_cfg["min_track_days"],
+            virtual=args.virtual_days,
+            max_speed_km_per_day=args.max_speed_km_per_day,
+            min_track_days=args.min_track_days,
         )
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

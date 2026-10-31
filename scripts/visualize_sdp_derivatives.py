@@ -12,7 +12,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
-from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
+from eddy_tracking.config import resolve_bronze_dir, resolve_output_dir
 from eddy_tracking.packages.sdp.ancillary import sample_ancillary
 from eddy_tracking.packages.sdp.physics import get_rrs_residuals
 from eddy_tracking.packages.sdp.preprocessing import preprocess_rrs_batch
@@ -25,9 +25,8 @@ def main() -> None:
     experiment = "gulf_stream_20240305_20260531"
     output_path = repo_root / "visuals" / "sdp_derivative_cascade.png"
 
-    cfg = load_config(experiment)
-    sst_dir = resolve_data_dir(cfg, "sst_dir")
-    sss_dir = resolve_data_dir(cfg, "sss_dir")
+    sst_dir = resolve_bronze_dir(experiment, "sst")
+    sss_dir = resolve_bronze_dir(experiment, "sss")
 
     # Pool every collocated cyclone pixel across every eddy + date.
     # The goal is a high-SNR demonstration of the derivative cascade, not a per-eddy result.

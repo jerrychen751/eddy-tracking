@@ -1,12 +1,12 @@
 import datetime as dt
 from collections import defaultdict
+from pathlib import Path
 from typing import NamedTuple, cast
 
 import numpy as np
 import pandas as pd
 from matplotlib.path import Path as MplPath
 
-from eddy_tracking.config import resolve_output_dir
 from eddy_tracking.packages.py_eddy_tracker.observations.tracking import (
     TrackEddiesObservations,
 )
@@ -15,9 +15,9 @@ from eddy_tracking.utils.subset import is_in_subset
 PET_EPOCH = dt.date(1950, 1, 1)
 
 
-def load_tracks(experiment: str, polarity: str) -> TrackEddiesObservations:
-    track_dir = resolve_output_dir(experiment, "eddy_track", polarity)
-    return TrackEddiesObservations.load_file(str(track_dir / f"{polarity}_tracks.zarr"))
+# track_dir is the folder track-eddies wrote, holding cyclone/ and anticyclone/
+def load_tracks(track_dir: Path, polarity: str) -> TrackEddiesObservations:
+    return TrackEddiesObservations.load_file(str(track_dir / polarity / f"{polarity}_tracks.zarr"))
 
 
 class EddyObs(NamedTuple):
@@ -85,14 +85,14 @@ def build_date_eddy_index(
 
 
 def load_date_eddy_index(
-    experiment: str,
+    track_dir: Path,
     track_ids: set[int] | None = None,
     region: dict | None = None,
     date_range: tuple[dt.date, dt.date] | None = None,
 ) -> dict[dt.date, list[EddyObs]]:
     date_index: dict[dt.date, list[EddyObs]] = defaultdict(list)
     for polarity in ("cyclone", "anticyclone"):
-        polarity_date_index = build_date_eddy_index(load_tracks(experiment, polarity), polarity, track_ids, region, date_range)
+        polarity_date_index = build_date_eddy_index(load_tracks(track_dir, polarity), polarity, track_ids, region, date_range)
         for day, observations in polarity_date_index.items():
             date_index[day].extend(observations)
     return date_index
@@ -119,7 +119,7 @@ def collect_eddies_for_date_range(
     return [obs for obs, _ in best.values()]
 
 
-def load_track_observations(experiment: str) -> pd.DataFrame:
+def load_track_observations(track_dir: Path) -> pd.DataFrame:
     """
     Non-virtual eddy observations across both polarities, one row each.
 
@@ -127,7 +127,7 @@ def load_track_observations(experiment: str) -> pd.DataFrame:
     """
     frames = []
     for polarity in ("cyclone", "anticyclone"):
-        tracked = load_tracks(experiment, polarity)
+        tracked = load_tracks(track_dir, polarity)
         keep = ~tracked.virtual.astype(bool)
         longitudes = tracked.longitude[keep]
         latitudes = tracked.latitude[keep]
@@ -136,7 +136,7 @@ def load_track_observations(experiment: str) -> pd.DataFrame:
             and np.isfinite(latitudes).all()
             and ((latitudes >= -90) & (latitudes <= 90)).all()
         ):
-            raise ValueError(f"Invalid physical center coordinates in {polarity} tracks of {experiment}")
+            raise ValueError(f"Invalid physical center coordinates in {polarity} tracks in {track_dir}")
         days = [PET_EPOCH + dt.timedelta(days=int(t)) for t in tracked.time[keep]]
         frames.append(pd.DataFrame({
             "polarity": polarity,

@@ -1,8 +1,8 @@
-# Download the Argo profiles inside the study region over the analysis period from the Ifremer ERDDAP server, through argopy
+# Download the Argo profiles inside the --lon/--lat box over --dates from the Ifremer ERDDAP server, through argopy
 
 from __future__ import annotations
 
-import sys
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -10,22 +10,15 @@ import argopy
 from argopy import ArgoIndex, DataFetcher
 from argopy.utils import list_standard_variables
 
-from eddy_tracking.config import load_config, resolve_data_dir
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 
 
-def _build_box(cfg: dict) -> list:
-    base = cfg["base"]
-    lon0, lon1 = base["region"]["lon_range"]
-    lat0, lat1 = base["region"]["lat_range"]
-    start, end = base["time"]["analysis_date_range"]
-    return [lon0, lon1, lat0, lat1, start, end]
-
-
-# GDAC index rows (one per profile file) inside the box, for the core and the synthetic BGC index
-def download_argo_index(cfg: dict, out_dir: Path) -> int:
-    box = _build_box(cfg)
+# GDAC index rows (one per profile file) inside the box [lon0, lon1, lat0, lat1, start, end], for the core and the synthetic BGC index
+def download_argo_index(box: list, profile_sets: list[str], out_dir: Path) -> int:
     n_total = 0
     for name, index_file in (("core", "core"), ("bgc", "bgc-s")):
+        if name not in profile_sets:
+            continue
         path = out_dir / f"{name}_index.parquet"
         if path.exists():
             continue
@@ -39,24 +32,25 @@ def download_argo_index(cfg: dict, out_dir: Path) -> int:
 
 
 # core_profiles.nc keeps only good or probably good position, time, pressure and temperature and prefers adjusted values, like argopy "standard" mode, but blanks salinity that failed QC instead of dropping the level, so floats with a failed conductivity sensor still give temperature profiles. bgc_profiles.nc uses "expert" mode, which keeps real-time data and every QC flag, because most BGC profiles in the region are still real-time; filter on the *_QC variables when using them
-def download_argo_profiles(cfg: dict, out_dir: Path) -> int:
-    lon0, lon1, lat0, lat1, start, end = _build_box(cfg)
+def download_argo_profiles(index_box: list, profile_sets: list[str], chunk_days: int, out_dir: Path) -> int:
+    lon0, lon1, lat0, lat1, start, end = index_box
     # The data fetcher's box also takes a pressure range (dbar); 0 to 6000 keeps every level, deep floats included.
     box = [lon0, lon1, lat0, lat1, 0.0, 6000.0, start, end]
-    argo_cfg = cfg["base"]["download"]["argo"]
     saved = 0
-    jobs: tuple[tuple[str, dict[str, Any]], ...] = (
-        ("core_profiles.nc", dict(ds="phy", mode="expert")),
-        ("bgc_profiles.nc", dict(ds="bgc", mode="expert", params="all", measured=None)),
+    jobs: tuple[tuple[str, str, dict[str, Any]], ...] = (
+        ("core", "core_profiles.nc", dict(ds="phy", mode="expert")),
+        ("bgc", "bgc_profiles.nc", dict(ds="bgc", mode="expert", params="all", measured=None)),
     )
-    for filename, options in jobs:
+    for name, filename, options in jobs:
+        if name not in profile_sets:
+            continue
         path = out_dir / filename
         if path.exists():
             continue
         fetcher = DataFetcher(
             src="erddap",
             parallel=True,
-            chunks_maxsize={"time": argo_cfg["chunk_days"]},
+            chunks_maxsize={"time": chunk_days},
             progress=False,
             **options,
         )
@@ -76,18 +70,22 @@ def download_argo_profiles(cfg: dict, out_dir: Path) -> int:
     return saved
 
 
-def main(experiment: str) -> None:
-    cfg = load_config(experiment)
+def main(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-argo")
+    add_region_arguments(parser)
+    parser.add_argument("--profiles", nargs="+", choices=["core", "bgc"], required=True, help="core T/S profiles, synthetic BGC profiles, or both")
+    parser.add_argument("--chunk-days", type=int, default=30, help="days per ERDDAP request")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-argo", args, operational={"chunk_days"})
+    args.out.mkdir(parents=True, exist_ok=True)
+
     argopy.set_options(cachedir=str(Path.home() / ".cache" / "argopy"))
-    out_dir = resolve_data_dir(cfg, "argo_dir")
-    n_listed = download_argo_index(cfg, out_dir)
-    n_saved = download_argo_profiles(cfg, out_dir)
+    box = [*args.lon, *args.lat, *args.dates]
+    n_listed = download_argo_index(box, args.profiles, args.out)
+    n_saved = download_argo_profiles(box, args.profiles, args.chunk_days, args.out)
     print(
         "status: complete\n"
         f"argo_index_profiles: {n_listed}\n"
         f"argo_files_saved: {n_saved}"
     )
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

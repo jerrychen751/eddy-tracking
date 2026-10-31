@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -11,12 +12,12 @@ import earthaccess
 import xarray as xr
 from earthaccess import DataGranule
 
-from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import (
     configure_obdaac_opendap_auth,
     login_earthdata,
     open_obdaac_dataset,
 )
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 from eddy_tracking.utils.files import write_netcdf_atomically
 
 
@@ -157,15 +158,22 @@ def download_aqua_sst_8d_4km(
     return saved, errors
 
 
-def main(experiment: str) -> None:
-    """Download configured SST files, exiting if any granule fails."""
-    cfg = load_config(experiment)
+def main(argv: list[str]) -> None:
+    """Download the --dates SST files, exiting if any granule fails."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-sst")
+    add_region_arguments(parser)
+    parser.add_argument("--collection-id", required=True, help="CMR collection id of AQUA MODIS L3m 8-day 4 km SST, such as C1615905770-OB_DAAC")
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-sst", args, operational=set())
+    args.out.mkdir(parents=True, exist_ok=True)
+
     n_saved, n_errors = download_aqua_sst_8d_4km(
-        date_range=tuple(cfg["base"]["time"]["rrs_date_range"]),
-        lon_range=tuple(cfg["base"]["region"]["lon_range"]),
-        lat_range=tuple(cfg["base"]["region"]["lat_range"]),
-        out_dir=resolve_data_dir(cfg, "sst_dir"),
-        collection_id=cfg["base"]["download"]["sst"]["collection_id"],
+        date_range=tuple(args.dates),
+        lon_range=tuple(args.lon),
+        lat_range=tuple(args.lat),
+        out_dir=args.out,
+        collection_id=args.collection_id,
     )
     status = "failed" if n_errors else "complete"
     print(
@@ -175,7 +183,3 @@ def main(experiment: str) -> None:
     )
     if n_errors:
         raise SystemExit(f"{n_errors} granule(s) failed to download")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

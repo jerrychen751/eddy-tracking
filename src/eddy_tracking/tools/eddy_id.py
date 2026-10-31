@@ -1,10 +1,10 @@
 """
 Identify eddies in daily SWOT L4 SSH files in parallel.
 
-For each daily NetCDF, subsets to the configured lon/lat region, applies a Bessel high-pass filter on ADT, and runs PET contour-based identification. Writes per-day cyclonic and anticyclonic eddy observation files to eddy_id/.
+For each daily NetCDF, subsets to the --lon/--lat region, applies a Bessel high-pass filter on ADT, and runs PET contour-based identification. Writes per-day cyclonic and anticyclonic eddy observation files to cyclone/ and anticyclone/ under --out.
 """
 
-import sys
+import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from eddy_tracking.config import load_config, resolve_data_dir, resolve_output_dir
 from eddy_tracking.preprocess.swot import index_swot_files_by_date
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 
 
 def resolve_eddy_output_paths(
@@ -104,32 +104,40 @@ def identify_one(
     return anticyclone_output_path, cyclone_output_path
 
 
-def main(experiment: str) -> None:
+def main(argv: list[str]) -> None:
     """Identify daily eddies in worker processes and write PET NetCDF files."""
-    cfg = load_config(experiment)
-    longitude_range = tuple(cfg["base"]["region"]["lon_range"])
-    latitude_range = tuple(cfg["base"]["region"]["lat_range"])
-    swot_dir = resolve_data_dir(cfg, "swot_dir")
-    anticyclone_dir = resolve_output_dir(experiment, "eddy_id", "anticyclone")
-    cyclone_dir = resolve_output_dir(experiment, "eddy_id", "cyclone")
-    max_workers = cfg["eddy_id"]["max_workers"]
-    bessel_wavelength = cfg["eddy_id"]["bessel_high_filter_wavelength"]
-    contour_step = cfg["eddy_id"]["step"]
-    shape_error = cfg["eddy_id"]["shape_error"]
-    min_amplitude = cfg["eddy_id"]["min_amplitude"]
+    parser = argparse.ArgumentParser(prog="eddy-tracking identify-eddies")
+    parser.add_argument("--ssh", type=Path, required=True, help="folder of daily SSH maps in the AVISO layout")
+    add_region_arguments(parser)
+    parser.add_argument("--bessel-km", type=float, required=True, help="high-pass cutoff wavelength of the Bessel filter on ADT")
+    parser.add_argument("--step-m", type=float, required=True, help="SSH contour step")
+    parser.add_argument("--shape-error", type=int, required=True, help="maximum percent deviation of a contour from a circle")
+    parser.add_argument("--min-amplitude-m", type=float, required=True)
+    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "identify-eddies", args, operational={"workers"})
 
-    swot_files = index_swot_files_by_date(swot_dir)
+    longitude_range = tuple(args.lon)
+    latitude_range = tuple(args.lat)
+    anticyclone_dir = args.out / "anticyclone"
+    cyclone_dir = args.out / "cyclone"
+    anticyclone_dir.mkdir(parents=True, exist_ok=True)
+    cyclone_dir.mkdir(parents=True, exist_ok=True)
+    start, end = (datetime.fromisoformat(day).date() for day in args.dates)
+
+    swot_files = {day: path for day, path in index_swot_files_by_date(args.ssh).items() if start <= day <= end}
     if not swot_files:
         print(
             "status: skipped\n"
             "reason: no_nc_files\n"
-            f"input_dir: {swot_dir}"
+            f"input_dir: {args.ssh}"
         )
         return
 
     # CPU-bound (Bessel filter + contour detection) - ThreadPoolExecutor would serialize due to the GIL; must use ProcessPoolExecutor here.
     n_failed = 0
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = {}
         for day, input_path in swot_files.items():
             date = datetime(day.year, day.month, day.day)
@@ -144,10 +152,10 @@ def main(experiment: str) -> None:
                 cyclone_path,
                 longitude_range,
                 latitude_range,
-                bessel_wavelength,
-                contour_step,
-                shape_error,
-                min_amplitude,
+                args.bessel_km,
+                args.step_m,
+                args.shape_error,
+                args.min_amplitude_m,
             )
             futures[future] = input_path
 
@@ -172,6 +180,3 @@ def main(experiment: str) -> None:
     if n_failed:
         raise RuntimeError(f"{n_failed}/{len(swot_files)} files failed in eddy_id")
 
-
-if __name__ == "__main__":
-    main(sys.argv[1])

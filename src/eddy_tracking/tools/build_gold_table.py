@@ -1,30 +1,30 @@
 """
 Assemble the gold eddy-pigment table: one analysis-ready row per eddy-day.
 
-Aggregates per-pixel pigments to eddy-interior means, joins track and environmental features, and writes ``gold/eddy_pigment_table.parquet``.
+Aggregates per-pixel pigments to eddy-interior means, joins track and environmental features, and writes the ``--out`` table.
 """
 
+import argparse
 import datetime as dt
-import sys
 from pathlib import Path
 from typing import cast
 
 import numpy as np
 import pandas as pd
 
-from eddy_tracking.config import load_config, resolve_gold_dir, resolve_output_dir
 from eddy_tracking.packages.sdp import PIGMENTS
 from eddy_tracking.preprocess.streamline import compute_signed_distance_km, index_centerlines_by_date
 from eddy_tracking.preprocess.tracks import load_track_observations
+from eddy_tracking.utils.cli import write_settings
 
 POLARITY_VALUES = {"anticyclone": 0, "cyclone": 1}
 
 
-def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
+def aggregate_eddy_days(pigments_dir: Path) -> pd.DataFrame:
     """Aggregate pigment files to one quality-control row per eddy-day."""
     rows = []
     for polarity, polarity_value in POLARITY_VALUES.items():
-        pigment_dir = resolve_output_dir(experiment, "pigments", polarity)
+        pigment_dir = pigments_dir / polarity
         for pigment_path in sorted(pigment_dir.glob("*_pigments.parquet")):
             pigments = pd.read_parquet(pigment_path)
             pigments = pigments.loc[pigments["inside_contour"]]
@@ -51,9 +51,9 @@ def aggregate_eddy_days(experiment: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_track_features(experiment: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_track_features(track_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build observation features and birth/death dates for both polarities."""
-    track_observations = load_track_observations(experiment)
+    track_observations = load_track_observations(track_dir)
     track_observations["polarity"] = track_observations["polarity"].map(POLARITY_VALUES)  # pyright: ignore[reportArgumentType]
     track_observations = cast(pd.DataFrame, track_observations[
         ["polarity", "track_id", "date", "radius_km", "amplitude_cm"]
@@ -116,16 +116,25 @@ def compute_gs_distance(centerline_by_date, date, center_lon, center_lat) -> flo
     return dist
 
 
-def main(experiment: str) -> None:
-    """Assemble and write the experiment's gold eddy-pigment table."""
-    cfg = load_config(experiment)
-    gulf_stream_dir = resolve_output_dir(experiment, "gulf_stream")
-    background_dir = resolve_output_dir(experiment, "pigments", "background")
-    dynamics_dir = resolve_output_dir(experiment, "eddy_dynamics")
-    eddy_start = pd.Timestamp(cfg["base"]["time"]["eddy_date_range"][0])
-    eddy_end = pd.Timestamp(cfg["base"]["time"]["eddy_date_range"][1])
+def main(argv: list[str]) -> None:
+    """Assemble and write the gold eddy-pigment table."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking build-gold-table")
+    parser.add_argument("--pigments", type=Path, required=True, help="folder run-sdp wrote")
+    parser.add_argument("--tracks", type=Path, required=True, help="folder track-eddies wrote")
+    parser.add_argument("--dynamics", type=Path, required=True, help="folder measure-dynamics wrote; the Rossby columns are left out when it holds no files")
+    parser.add_argument("--axis", type=Path, required=True, help="folder trace-axis wrote")
+    parser.add_argument("--background", type=Path, required=True, help="folder sample-background wrote; the log-ratio columns are left out when it holds no bg_mean.parquet")
+    parser.add_argument("--dates", nargs=2, required=True, metavar=("START", "END"), help="ISO dates the tracking covered, both inclusive; a birth or death on either end is not counted as observed")
+    parser.add_argument("--out", type=Path, required=True, help="the .parquet table to write")
+    args = parser.parse_args(argv)
+    write_settings(args.out, "build-gold-table", args, operational=set())
 
-    eddy_days = aggregate_eddy_days(experiment)
+    gulf_stream_dir = args.axis
+    dynamics_dir = args.dynamics
+    eddy_start = pd.Timestamp(args.dates[0])
+    eddy_end = pd.Timestamp(args.dates[1])
+
+    eddy_days = aggregate_eddy_days(args.pigments)
     if eddy_days.empty:
         print(
             "status: skipped\n"
@@ -150,7 +159,7 @@ def main(experiment: str) -> None:
             f"minimum_interior_pixels: {min_eddy_pixels}"
         )
 
-    track_observations, track_lifetimes = build_track_features(experiment)
+    track_observations, track_lifetimes = build_track_features(args.tracks)
     eddy_days = pd.merge_asof(
         eddy_days.sort_values("date"),  # pyright: ignore[reportCallIssue]
         track_observations.sort_values("date"),
@@ -213,7 +222,7 @@ def main(experiment: str) -> None:
         )
     ]
 
-    background_path = background_dir / "bg_mean.parquet"
+    background_path = args.background / "bg_mean.parquet"
     if background_path.exists():
         eddy_days = eddy_days.merge(
             pd.read_parquet(background_path), on="date", how="left"
@@ -247,14 +256,9 @@ def main(experiment: str) -> None:
             f"background_path: {background_path}"
         )
 
-    out_path = resolve_gold_dir(experiment, "eddy_pigment_table.parquet")
-    eddy_days.to_parquet(out_path, index=False)
+    eddy_days.to_parquet(args.out, index=False)
     print(
-        f"output_path: {out_path}\n"
+        f"output_path: {args.out}\n"
         f"rows_written: {len(eddy_days)}\n"
         f"columns_written: {len(eddy_days.columns)}"
     )
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

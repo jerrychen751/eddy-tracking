@@ -4,20 +4,16 @@ Run the SDP pigment model on collocated PACE Rrs observations.
 For each per-eddy Rrs Parquet file, preprocesses the spectra, samples SST/SSS, runs the Kramer et al. (2022) model, and writes a pigment Parquet file.
 """
 
-import sys
+import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
 
-from eddy_tracking.config import (
-    METADATA_COLS,
-    load_config,
-    resolve_data_dir,
-    resolve_output_dir,
-)
+from eddy_tracking.config import METADATA_COLS
 from eddy_tracking.packages.sdp import run_sdp_on_pace_l3
 from eddy_tracking.preprocess.ancillary import read_ancillary_grids
+from eddy_tracking.utils.cli import write_settings
 
 
 def process_eddy(
@@ -72,17 +68,26 @@ def process_eddy_in_worker(rrs_path: Path, out_path: Path) -> bool:
     return process_eddy(rrs_path, out_path, sst_df, sss_df)
 
 
-def main(experiment: str) -> None:
+def main(argv: list[str]) -> None:
     """Process all collocated eddies and write missing pigment Parquet files."""
-    cfg = load_config(experiment)
-    sst_dir = resolve_data_dir(cfg, "sst_dir")
-    sss_dir = resolve_data_dir(cfg, "sss_dir")
-    max_workers = cfg.get("run_sdp", {}).get("max_workers", 1)
+    parser = argparse.ArgumentParser(prog="eddy-tracking run-sdp")
+    parser.add_argument("--collocated", type=Path, required=True, help="folder collocate-pace wrote")
+    parser.add_argument("--sst", type=Path, required=True, help="folder of SST files")
+    parser.add_argument("--sss", type=Path, required=True, help="folder of SSS files")
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "run-sdp", args, operational={"workers"})
+
+    sst_dir = args.sst
+    sss_dir = args.sss
+    max_workers = args.workers
 
     tasks: list[tuple[Path, Path]] = []
     for polarity in ("cyclone", "anticyclone"):
-        rrs_dir = resolve_output_dir(experiment, "collocate_pace", polarity)
-        out_dir = resolve_output_dir(experiment, "pigments", polarity)
+        rrs_dir = args.collocated / polarity
+        out_dir = args.out / polarity
+        out_dir.mkdir(parents=True, exist_ok=True)
 
         rrs_files = sorted(rrs_dir.glob("eddy_*_rrs.parquet"))
         if not rrs_files:
@@ -130,7 +135,3 @@ def main(experiment: str) -> None:
         "status: complete\n"
         f"pigment_files_written: {n_written}"
     )
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])

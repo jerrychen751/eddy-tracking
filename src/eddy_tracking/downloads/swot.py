@@ -1,7 +1,7 @@
 """Download, trim, and optionally mask daily AVISO L4 SSH files."""
 
+import argparse
 import re
-import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -13,8 +13,8 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt
 import xarray as xr
 
-from eddy_tracking.config import load_config, resolve_data_dir
 from eddy_tracking.downloads.auth import AvisoCredentials, login_aviso, load_aviso_credentials
+from eddy_tracking.utils.cli import add_region_arguments, write_settings
 from eddy_tracking.utils.files import write_netcdf_atomically
 
 
@@ -36,23 +36,6 @@ class DownloadSettings:
     filter_open_ocean: bool
     exclude_lon_range: tuple[float, float]
     exclude_lat_range: tuple[float, float]
-
-
-def load_settings(experiment: str) -> DownloadSettings:
-    credentials = load_aviso_credentials()
-    cfg = load_config(experiment)
-    return DownloadSettings(
-        credentials=credentials,
-        remote_dir=cfg["base"]["download"]["swot"]["ftp_dir"],
-        local_dir=resolve_data_dir(cfg, "swot_dir"),
-        max_workers=cfg["base"]["download"]["swot"]["max_workers"],
-        date_range=tuple(cfg["base"]["time"]["eddy_date_range"]),
-        longitude_range=tuple(cfg["base"]["region"]["lon_range"]),
-        latitude_range=tuple(cfg["base"]["region"]["lat_range"]),
-        filter_open_ocean=cfg["base"]["download"]["swot"]["filter_open_ocean"],
-        exclude_lon_range=tuple(cfg["base"]["download"]["swot"]["exclude_box"]["lon_range"]),
-        exclude_lat_range=tuple(cfg["base"]["download"]["swot"]["exclude_box"]["lat_range"]),
-    )
 
 
 def filter_by_date_range(
@@ -209,9 +192,31 @@ def download_files(settings: DownloadSettings) -> list[str]:
     return failures
 
 
-def main(experiment: str) -> None:
-    """Download configured SWOT files in parallel and trim them to the region."""
-    failures = download_files(load_settings(experiment))
+def main(argv: list[str]) -> None:
+    """Download the --dates SWOT files in parallel and trim them to the --lon/--lat region."""
+    parser = argparse.ArgumentParser(prog="eddy-tracking download-aviso-ssh")
+    add_region_arguments(parser)
+    parser.add_argument("--ftp-dir", required=True, help="AVISO FTP folder of the daily L4 files, such as swot_products/l4_karin_nadir/v3_0/miost")
+    parser.add_argument("--mask-open-ocean", action=argparse.BooleanOptionalAction, required=True, help="mask invalid cells, their coast buffer and the exclusion box, keeping the unmasked <field>_full beside them")
+    parser.add_argument("--exclude-box", nargs=4, type=float, required=True, metavar=("WEST", "EAST", "SOUTH", "NORTH"), help="box masked with the coast buffer, degrees")
+    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args(argv)
+    write_settings(args.out, "download-aviso-ssh", args, operational={"workers"})
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    failures = download_files(DownloadSettings(
+        credentials=load_aviso_credentials(),
+        remote_dir=args.ftp_dir,
+        local_dir=args.out,
+        max_workers=args.workers,
+        date_range=tuple(args.dates),
+        longitude_range=tuple(args.lon),
+        latitude_range=tuple(args.lat),
+        filter_open_ocean=args.mask_open_ocean,
+        exclude_lon_range=tuple(args.exclude_box[:2]),
+        exclude_lat_range=tuple(args.exclude_box[2:]),
+    ))
     if failures:
         print(
             "\nstatus: failed\n"
@@ -220,7 +225,3 @@ def main(experiment: str) -> None:
         for message in failures:
             print(message)
         raise SystemExit(1)
-
-
-if __name__ == "__main__":
-    main(sys.argv[1])
