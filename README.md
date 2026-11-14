@@ -162,6 +162,9 @@ Gold tables
 
 --tracks, --argo bronze/argo/core_profiles.nc, --axis
   -> match-argo -> gold/argo_matchups.parquet
+
+--argo bronze/argo/core_profiles.nc, --ssh, --axis
+  -> build-argo-profiles -> gold/argo_profiles.nc
 ```
 
 `collocate-plankton` writes one row per eddy and NASA 8-day period, with the mean, mean uncertainty, and pixel count of every plankton field inside the eddy boundary nearest the period midpoint, plus the movement class, physical lifetime, and `age_frac`. A row needs CHL on at least `--min-coverage` of the interior pixels and on at least `--min-pixels` of them. The lifetime notebook reads this table as its chlorophyll source.

@@ -27,3 +27,10 @@ eddy-tracking download-argo $REGION --profiles core --chunk-days 90 \
 eddy-tracking match-argo --tracks $D/silver/eddy_track --argo $D/bronze/argo/core_profiles.nc \
   --axis $D/silver/gulf_stream --max-radius-fraction 1.5 \
   --out $D/gold/argo_matchups.parquet
+# The 1991-2020 monthly climatology for the seasonal temperature baseline; it runs on the laptop, because it is 2 MB and the notebooks read it there
+# eddy-tracking download-woa --lon -81 -56 --lat 29 44 --opendap-root https://www.ncei.noaa.gov/thredds-ocean/dodsC/woa23/DATA --period decav91C0 \
+#   --out $D/bronze/woa23
+# The profiles to 1000 dbar with each profile's |Ro| and axis distance, small enough to copy to the laptop, where the SSH maps are not
+eddy-tracking build-argo-profiles --argo $D/bronze/argo/core_profiles.nc --ssh $D/bronze/ssh \
+  --axis $D/silver/gulf_stream --max-pressure 1000 --workers 32 \
+  --out $D/gold/argo_profiles.nc

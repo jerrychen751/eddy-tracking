@@ -1,0 +1,2 @@
+# Analysis period: the whole DUACS tracking record; Argo profiles start in 2000. Notebooks keep an eddy whose track overlaps it (eddy_tracking.utils.analysis_period).
+analysis_date_range: ["1993-01-01", "2026-05-15"]

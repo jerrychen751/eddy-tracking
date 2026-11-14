@@ -25,6 +25,7 @@ TOOLS = {
     "sample-background": "eddy_tracking.tools.background",
     "build-gold-table": "eddy_tracking.tools.build_gold_table",
     "match-argo": "eddy_tracking.tools.match_argo",
+    "build-argo-profiles": "eddy_tracking.tools.build_argo_profiles",
 }
 
 
