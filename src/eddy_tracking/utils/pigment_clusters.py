@@ -1,6 +1,6 @@
 # Hierarchical clustering of the SDP pigment ratios over the target eddy-composites, and its PFT labels.
 # A cluster is named after the PFTs whose diagnostic pigments it holds, the way Kramer and Siegel (2019) name the branches of their trees: the marker pigment places a group, while pigments shared by several groups (Chlc12, Chlc3, Viola) only follow whichever markers they correlate with.
-# research_paper/pigments_clustering.ipynb draws and checks the clustering and research_paper/figures.ipynb groups its pigment panels by the labeled clusters; both read them from here, so a change of data or cut height reaches both.
+# research_paper/pace_sdp.ipynb draws and checks the clustering and research_paper/figures.ipynb groups its pigment panels by the labeled clusters; both read them from here, so a change of data or cut height reaches both.
 
 from pathlib import Path
 from typing import Any, NamedTuple, cast
